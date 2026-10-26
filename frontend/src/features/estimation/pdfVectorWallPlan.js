@@ -9,6 +9,8 @@ import {
     calculateOffsetPoints,
     calculateActualProjectDimensions,
     buildWallOffsetOptions,
+    wallKeepsDrawnFace,
+    resolve45CutForceShouldFlip,
     drawWallPlanDimensionsLayer,
     drawOverallProjectDimensions,
     applyAngledWallMitersAtIntersection,
@@ -359,7 +361,14 @@ export function drawVectorWallPlan(
                         const y2 = wall.end_y || 0;
                         const thickness = wall.thickness || 200;
                         const offsetOpts = buildWallOffsetOptions(wall, roomsToDraw) || {};
-                        offsetOpts.noAutoFlip = true;
+                        if (wallKeepsDrawnFace(wall)) {
+                            offsetOpts.noAutoFlip = true;
+                        } else {
+                            const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
+                            if (typeof forcedFlip === 'boolean') {
+                                offsetOpts.forceShouldFlip = forcedFlip;
+                            }
+                        }
                         const { line1, line2 } = calculateOffsetPoints(
                             x1, y1, x2, y2, thickness, center, 1, offsetOpts
                         );
@@ -744,7 +753,14 @@ export function drawVectorWallPlan(
                         // Use scale = 1 for model space calculations (we'll transform to PDF space later)
                         const gapPixels = wallThickness; // In model space, gap = thickness
                         const offsetOpts = buildWallOffsetOptions(wall, roomsToDraw) || {};
-                        offsetOpts.noAutoFlip = true;
+                        if (wallKeepsDrawnFace(wall)) {
+                            offsetOpts.noAutoFlip = true;
+                        } else {
+                            const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
+                            if (typeof forcedFlip === 'boolean') {
+                                offsetOpts.forceShouldFlip = forcedFlip;
+                            }
+                        }
 
                         let { line1, line2 } = calculateOffsetPoints(
                             wall.start_x,
@@ -893,7 +909,7 @@ export function drawVectorWallPlan(
                                     const isHorizontalWall1 = String(jointWall1Id) === String(hWall.id);
 
                                     if (phase === 'extend') {
-                                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody) {
+                                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody && !wallKeepsDrawnFace(vWall)) {
                                         const vEndpointYCaseA = vIsAtStart ? vWall.start_y : vWall.end_y;
                                         const vOtherYCaseA = vIsAtStart ? vWall.end_y : vWall.start_y;
                                         const isTopEndCaseA = vEndpointYCaseA < vOtherYCaseA;
@@ -932,7 +948,7 @@ export function drawVectorWallPlan(
                                             vLines.line1[1].y = targetY;
                                             vLines.line2[1].y = targetY;
                                         }
-                                    } else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody) {
+                                    } else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && !wallKeepsDrawnFace(hWall)) {
                                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
                                         const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
@@ -1063,7 +1079,7 @@ export function drawVectorWallPlan(
                                             targetY = hLowerStartY;
                                         }
                                     }
-                                    if (!verticalWall.isOnBody) {
+                                    if (!verticalWall.isOnBody && !wallKeepsDrawnFace(vWall)) {
                                         if (vIsAtStart) {
                                             vLines.line1[0].y = targetY;
                                             vLines.line2[0].y = targetY;
@@ -1107,7 +1123,7 @@ export function drawVectorWallPlan(
                                             targetX = vLeftStartX;
                                         }
                                     }
-                                    if (!horizontalWall.isOnBody) {
+                                    if (!horizontalWall.isOnBody && !wallKeepsDrawnFace(hWall)) {
                                         if (hIsAtStart) {
                                             hLines.line1[0].x = targetX;
                                             hLines.line2[0].x = targetX;
@@ -1120,6 +1136,7 @@ export function drawVectorWallPlan(
                                 }
                             });
                             };
+                            runVhPairPhase('extend');
                             runVhPairPhase('shorten');
                             applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
                         }
@@ -1367,6 +1384,27 @@ export function drawVectorWallPlan(
                             }
                         }
                         
+                        if (!wallKeepsDrawnFace(wall)) {
+                            const forcedFlipForWall = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
+                            if (typeof forcedFlipForWall === 'boolean') {
+                                const dx = wall.end_x - wall.start_x;
+                                const dy = wall.end_y - wall.start_y;
+                                const len = Math.hypot(dx, dy) || 1;
+                                const normalX = dy / len;
+                                const normalY = -dx / len;
+                                const wallMidX = (wall.start_x + wall.end_x) / 2;
+                                const wallMidY = (wall.start_y + wall.end_y) / 2;
+                                const line2MidX = (line2[0].x + line2[1].x) / 2;
+                                const line2MidY = (line2[0].y + line2[1].y) / 2;
+                                const line2Dot = normalX * (line2MidX - wallMidX) + normalY * (line2MidY - wallMidY);
+                                const line2IsPositiveSide = line2Dot > 0;
+                                if (line2IsPositiveSide !== forcedFlipForWall) {
+                                    const tmp = line1;
+                                    line1 = line2;
+                                    line2 = tmp;
+                                }
+                            }
+                        }
                         wall._line1 = line1;
                         wall._line2 = line2;
                         

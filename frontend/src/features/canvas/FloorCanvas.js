@@ -14,6 +14,8 @@ import {
     calculateOffsetPoints,
     makeLabelDrawFn,
     buildWallOffsetOptions,
+    wallKeepsDrawnFace,
+    resolve45CutForceShouldFlip,
 } from './drawing.js';
 import { drawFloorPlanDimensionOnContext } from './planDimensionDrawing.js';
 import {
@@ -713,7 +715,14 @@ const FloorCanvas = ({
                 const wallThickness = wall.thickness || 100;
                 const gapPixels = (wallThickness * scaleFactor.current) / 2;
                 const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
-                offsetOpts.noAutoFlip = true;
+                if (wallKeepsDrawnFace(wall)) {
+                    offsetOpts.noAutoFlip = true;
+                } else {
+                    const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+                    if (typeof forcedFlip === 'boolean') {
+                        offsetOpts.forceShouldFlip = forcedFlip;
+                    }
+                }
 
                 let has45 = false;
                 intersections.forEach(inter => {
@@ -743,6 +752,27 @@ const FloorCanvas = ({
                     line2[0].y += uy * finalAdjust;
                     line2[1].x -= ux * finalAdjust;
                     line2[1].y -= uy * finalAdjust;
+                }
+
+                if (!wallKeepsDrawnFace(wall)) {
+                    const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
+                    if (typeof forcedFlip === 'boolean') {
+                        const dx = wall.end_x - wall.start_x;
+                        const dy = wall.end_y - wall.start_y;
+                        const len = Math.hypot(dx, dy) || 1;
+                        const normalX = dy / len;
+                        const normalY = -dx / len;
+                        const wallMidX = (wall.start_x + wall.end_x) / 2;
+                        const wallMidY = (wall.start_y + wall.end_y) / 2;
+                        const line2MidX = (line2[0].x + line2[1].x) / 2;
+                        const line2MidY = (line2[0].y + line2[1].y) / 2;
+                        const line2Dot = normalX * (line2MidX - wallMidX) + normalY * (line2MidY - wallMidY);
+                        if ((line2Dot > 0) !== forcedFlip) {
+                            const tmp = line1;
+                            line1 = line2;
+                            line2 = tmp;
+                        }
+                    }
                 }
 
                 wall._line1 = line1;

@@ -13,7 +13,7 @@ import {
     getPlanDimensionLaneConfig,
     planCeilingValueDedupKey
 } from '../canvas/DimensionConfig';
-import { calculateOffsetPoints, buildWallOffsetOptions, computeWallPlanDimensionFontSize } from '../canvas/drawing';
+import { calculateOffsetPoints, buildWallOffsetOptions, wallKeepsDrawnFace, computeWallPlanDimensionFontSize } from '../canvas/drawing';
 import { drawCollectedPlanDimensionsOnContext } from '../canvas/planDimensionDrawing';
 import {
     smartPlacement,
@@ -278,7 +278,7 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
             // Match CeilingCanvas/FloorCanvas: offset = half thickness per side (gapPixels/scaleFactor with sf=1).
             const gapPixels = (wallThickness * MODEL_SF) / 2;
             const offsetOpts = buildWallOffsetOptions(wall, storeyRooms) || {};
-            offsetOpts.noAutoFlip = true;
+            if (wallKeepsDrawnFace(wall)) offsetOpts.noAutoFlip = true;
 
             let { line1, line2 } = calculateOffsetPoints(
                 num(wall.start_x),
