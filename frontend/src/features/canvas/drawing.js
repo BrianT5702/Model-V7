@@ -1257,7 +1257,7 @@ function markWallMiteredEnd(wall, atStart) {
  * Uses fresh ±half-thickness faces from the stem centerline (not the possibly
  * already-edited drawn faces) so left/right identity cannot flip into an hourglass X.
  */
-export function applyAngledButtInAtIntersection(wallsAtIntersection, inter) {
+export function applyAngledButtInAtIntersection(wallsAtIntersection, inter, legacyWallPlan = true) {
     if (!inter || !Array.isArray(wallsAtIntersection) || wallsAtIntersection.length < 2) return;
 
     const resolvePair = (wallA, wallB) => {
@@ -1360,6 +1360,9 @@ export function applyAngledButtInAtIntersection(wallsAtIntersection, inter) {
             if (stemEntry.isOnBody && !stemEntry.isAtStart && !stemEntry.isAtEnd) continue;
 
             const stem = stemEntry.wall;
+            // A drawn face already ends on the line the drafter snapped. Only older
+            // plans still pull the stem onto the host face the joint math picks.
+            if (!wallUsesLegacyPlanAdjustments(stem, legacyWallPlan)) continue;
             const stemLines = stemEntry.wallData;
             const hostLines = hostEntry.wallData;
             const atStart = endAtJoint(stemEntry);
@@ -6500,7 +6503,7 @@ export function drawWalls({
 
                     // Case 1: Vertical is stem (wall1), Horizontal is host (wall2)
                     // At T-junctions always allow shortening the stem even if isOnBody flags disagree.
-                    if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody) {
+                    if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody && usesLegacyPlan(vWall)) {
                         // Use geometry at the intersection (nearest endpoint) so stem direction — and thus
                         // which horizontal edge is the near face — is not flipped when wall1/2 flags disagree.
                         const distJointToStart = Math.hypot(inter.x - vWall.start_x, inter.y - vWall.start_y);
@@ -6537,7 +6540,7 @@ export function drawWalls({
                     // Case 2: Horizontal is stem (wall1), Vertical is host (wall2)
                     // Only shorten wall1 if the intersection is at an actual endpoint of wall1
                     // If wall1 is intersected in the middle (isOnBody), skip shortening (it should remain full length)
-                    else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody) {
+                    else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody && usesLegacyPlan(hWall)) {
                         // Determine which line of vertical (wall2) to connect to
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -6720,7 +6723,7 @@ export function drawWalls({
             // Slanted / non-ortho corners: true face-line miters
             applyAngledWallMitersAtIntersection(wallsAtIntersection, inter);
             // Slant / non-ortho butt-in: trim stem faces to host near face
-            applyAngledButtInAtIntersection(wallsAtIntersection, inter);
+            applyAngledButtInAtIntersection(wallsAtIntersection, inter, legacyWallPlan);
         }
     });
     

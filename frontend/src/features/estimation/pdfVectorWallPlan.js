@@ -997,7 +997,7 @@ export function drawVectorWallPlan(
                                     }
 
                                     if (phase === 'shorten') {
-                                    if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody) {
+                                    if (isVerticalWall1 && !isHorizontalWall1 && !verticalWall.isOnBody && usesLegacyPlan(vWall)) {
                                         const distJointToStart = Math.hypot(inter.x - vWall.start_x, inter.y - vWall.start_y);
                                         const distJointToEnd = Math.hypot(inter.x - vWall.end_x, inter.y - vWall.end_y);
                                         const jointAtVerticalStart = distJointToStart < distJointToEnd;
@@ -1015,7 +1015,7 @@ export function drawVectorWallPlan(
                                         const vLine2Endpoint = jointAtVerticalStart ? vLines.line2[0] : vLines.line2[1];
                                         vLine1Endpoint.y = targetY;
                                         vLine2Endpoint.y = targetY;
-                                    } else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody) {
+                                    } else if (isHorizontalWall1 && !isVerticalWall1 && !horizontalWall.isOnBody && usesLegacyPlan(hWall)) {
                                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
                                         const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
