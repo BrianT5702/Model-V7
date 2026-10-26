@@ -3193,6 +3193,7 @@ const Canvas2D = ({
             doors,
             polygonSelectMode: currentMode === 'define-room' || currentMode === 'storey-area',
             selectedIntersectionKeys: new Set(selectedIntersections.map(getIntersectionKey)),
+            legacyWallPlan: project?.legacy_wall_plan !== false,
         });
         const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
         const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;

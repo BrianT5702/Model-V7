@@ -14,7 +14,7 @@ import {
     calculateOffsetPoints,
     makeLabelDrawFn,
     buildWallOffsetOptions,
-    wallKeepsDrawnFace,
+    wallUsesLegacyPlanAdjustments,
     resolve45CutForceShouldFlip,
 } from './drawing.js';
 import { drawFloorPlanDimensionOnContext } from './planDimensionDrawing.js';
@@ -715,7 +715,8 @@ const FloorCanvas = ({
                 const wallThickness = wall.thickness || 100;
                 const gapPixels = (wallThickness * scaleFactor.current) / 2;
                 const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
-                if (wallKeepsDrawnFace(wall)) {
+                const legacyWallPlan = projectData?.legacy_wall_plan !== false;
+                if (!wallUsesLegacyPlanAdjustments(wall, legacyWallPlan)) {
                     offsetOpts.noAutoFlip = true;
                 } else {
                     const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
@@ -754,7 +755,7 @@ const FloorCanvas = ({
                     line2[1].y -= uy * finalAdjust;
                 }
 
-                if (!wallKeepsDrawnFace(wall)) {
+                if (wallUsesLegacyPlanAdjustments(wall, projectData?.legacy_wall_plan !== false)) {
                     const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
                     if (typeof forcedFlip === 'boolean') {
                         const dx = wall.end_x - wall.start_x;

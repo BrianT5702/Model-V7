@@ -156,7 +156,8 @@ const InstallationTimeEstimator = ({
                         doors,
                         walls: wallsForVector,
                         planPageOrientation,
-                        fitToPage
+                        fitToPage,
+                        legacyWallPlan: projectData?.legacy_wall_plan !== false
                     })
                 ]);
                 if (cancelled) return;
@@ -180,7 +181,8 @@ const InstallationTimeEstimator = ({
                     walls: wallsForVector,
                     wallIntersections: ceilingFloorIntersections,
                     slabWidth,
-                    slabLength
+                    slabLength,
+                    legacyWallPlan: projectData?.legacy_wall_plan !== false
                 });
                 if (cancelled) return;
 
@@ -2414,7 +2416,9 @@ const InstallationTimeEstimator = ({
                                 wallsForVector,
                                 planPageOrientation,
                                 fitToPage,
-                                false
+                                false,
+                                null,
+                                projectData?.legacy_wall_plan !== false
                             );
                         }
                     }
@@ -2432,7 +2436,9 @@ const InstallationTimeEstimator = ({
                         wallsForVector,
                         planPageOrientation,
                         fitToPage,
-                        false
+                        false,
+                        null,
+                        projectData?.legacy_wall_plan !== false
                     );
                 }
             }
@@ -2465,7 +2471,8 @@ const InstallationTimeEstimator = ({
                         walls: wallsForVector,
                         wallIntersections: wallIntersectionsForPlans,
                         slabWidth,
-                        slabLength
+                        slabLength,
+                        legacyWallPlan: projectData?.legacy_wall_plan !== false
                     });
                     usedVectorCeiling = flags.usedVectorCeiling;
                     usedVectorFloor = flags.usedVectorFloor;

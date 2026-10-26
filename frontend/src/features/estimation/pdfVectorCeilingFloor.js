@@ -13,7 +13,7 @@ import {
     getPlanDimensionLaneConfig,
     planCeilingValueDedupKey
 } from '../canvas/DimensionConfig';
-import { calculateOffsetPoints, buildWallOffsetOptions, wallKeepsDrawnFace, computeWallPlanDimensionFontSize } from '../canvas/drawing';
+import { calculateOffsetPoints, buildWallOffsetOptions, wallUsesLegacyPlanAdjustments, computeWallPlanDimensionFontSize } from '../canvas/drawing';
 import { drawCollectedPlanDimensionsOnContext } from '../canvas/planDimensionDrawing';
 import {
     smartPlacement,
@@ -261,7 +261,7 @@ function drawGhostsOnPdf(doc, transformX, transformY, scale, ghostAreas, ghostWa
 }
 
 /** Double-line walls like FloorCanvas / CeilingCanvas (not a single room outline). */
-function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWalls, storeyRooms, intersections) {
+function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWalls, storeyRooms, intersections, legacyWallPlan = true) {
     if (!storeyWalls || storeyWalls.length === 0) return;
 
     const center = { x: 0, y: 0 };
@@ -278,7 +278,7 @@ function drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWa
             // Match CeilingCanvas/FloorCanvas: offset = half thickness per side (gapPixels/scaleFactor with sf=1).
             const gapPixels = (wallThickness * MODEL_SF) / 2;
             const offsetOpts = buildWallOffsetOptions(wall, storeyRooms) || {};
-            if (wallKeepsDrawnFace(wall)) offsetOpts.noAutoFlip = true;
+            if (!wallUsesLegacyPlanAdjustments(wall, legacyWallPlan)) offsetOpts.noAutoFlip = true;
 
             let { line1, line2 } = calculateOffsetPoints(
                 num(wall.start_x),
@@ -2586,7 +2586,8 @@ function drawPlanPage(doc, {
     slabWidth = 1210,
     slabLength = 3000,
     ghostWalls = [],
-    ghostAreas = []
+    ghostAreas = [],
+    legacyWallPlan = true
 }) {
     let roomBounds = initialBounds();
     roomBounds = expandBoundsRooms(storeyRooms, roomBounds);
@@ -2661,7 +2662,7 @@ function drawPlanPage(doc, {
     // Ghosts behind live geometry (same order as CeilingCanvas / FloorCanvas / wall-plan PDF)
     drawGhostsOnPdf(doc, transformX, transformY, scale, ghostAreas, ghostWalls);
 
-    drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWalls, storeyRooms, wallIntersections);
+    drawStoreyWallsOnPdf(doc, transformX, transformY, scale, kind, storeyWalls, storeyRooms, wallIntersections, legacyWallPlan);
     drawPanelsOnPdf(doc, panels, transformX, transformY, kind);
     if (kind === 'ceiling') {
         drawNylonHangersOnCeilingPdf(
@@ -2782,7 +2783,8 @@ export function buildVectorCeilingFloorPreviewBlobs({
     walls = [],
     wallIntersections = [],
     slabWidth = 1210,
-    slabLength = 3000
+    slabLength = 3000,
+    legacyWallPlan = true
 }) {
     const orient = planPageOrientation === 'landscape' ? 'landscape' : 'portrait';
     const ceilingDoc = new jsPDF({ unit: 'mm', format: 'a4', orientation: orient });
@@ -2870,7 +2872,8 @@ export function buildVectorCeilingFloorPreviewBlobs({
                 slabWidth,
                 slabLength,
                 ghostWalls,
-                ghostAreas
+                ghostAreas,
+                legacyWallPlan
             });
             if (ok) usedCeiling = true;
         }
@@ -2891,7 +2894,8 @@ export function buildVectorCeilingFloorPreviewBlobs({
                 slabWidth,
                 slabLength,
                 ghostWalls,
-                ghostAreas
+                ghostAreas,
+                legacyWallPlan
             });
             if (ok) usedFloor = true;
         }
@@ -2941,7 +2945,8 @@ export function appendVectorCeilingAndFloorPlans(doc, {
     walls = [],
     wallIntersections = [],
     slabWidth = 1210,
-    slabLength = 3000
+    slabLength = 3000,
+    legacyWallPlan = true
 }) {
     let usedVectorCeiling = false;
     let usedVectorFloor = false;
@@ -3025,7 +3030,8 @@ export function appendVectorCeilingAndFloorPlans(doc, {
                 slabWidth,
                 slabLength,
                 ghostWalls,
-                ghostAreas
+                ghostAreas,
+                legacyWallPlan
             });
             if (ok) usedVectorCeiling = true;
         }
@@ -3046,7 +3052,8 @@ export function appendVectorCeilingAndFloorPlans(doc, {
                 slabWidth,
                 slabLength,
                 ghostWalls,
-                ghostAreas
+                ghostAreas,
+                legacyWallPlan
             });
             if (ok) usedVectorFloor = true;
         }

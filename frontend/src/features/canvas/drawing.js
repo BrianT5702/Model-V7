@@ -5281,13 +5281,19 @@ function getNearestRoomCentroidToWallSegment(wall, rooms) {
 
 /**
  * Current drawings store the chosen face as tip_length -1 or -2.
- * Older walls have no chosen side, so the plan still flips the thickness
+ * Older walls have no chosen side, so a legacy project still flips the thickness
  * and extends the corner the way those projects were drawn.
  */
 export function wallKeepsDrawnFace(wall) {
     if (!wall || wall.tip_to_tip === true) return false;
     const code = Number(wall.tip_length);
     return code === -1 || code === -2;
+}
+
+/** Projects and versions created from now on pass legacyWallPlan false and skip both. */
+export function wallUsesLegacyPlanAdjustments(wall, legacyWallPlan = true) {
+    if (legacyWallPlan === false) return false;
+    return wallKeepsDrawnFace(wall) === false;
 }
 
 /**
@@ -6074,7 +6080,9 @@ export function drawWalls({
     // Define-room / storey-area: hide shortened partition tips; caller draws extended snaps.
     polygonSelectMode = false,
     selectedIntersectionKeys = null,
+    legacyWallPlan = true,
 }) {
+    const usesLegacyPlan = (wall) => wallUsesLegacyPlanAdjustments(wall, legacyWallPlan);
     if (!Array.isArray(walls) || !walls) return;
     
     // Same thickness and face materials share one color.
@@ -6093,7 +6101,7 @@ export function drawWalls({
         const wallThickness = wall.thickness; // Default to 100mm if not set
         const gapPixels = (wallThickness * scaleFactor);
         const offsetOpts = buildWallOffsetOptions(wall, rooms) || {};
-        const keepsDrawnFace = wallKeepsDrawnFace(wall);
+        const keepsDrawnFace = !usesLegacyPlan(wall);
         if (keepsDrawnFace) {
             // The drafter already picked which side the thickness sits on.
             offsetOpts.noAutoFlip = true;
@@ -6380,7 +6388,7 @@ export function drawWalls({
                     // Case A: Vertical is wall2 (host), Horizontal is wall1 (stem)
                     // Only extend host if the intersection is at an actual endpoint of the host.
                     // If host is intersected in the middle (isOnBody), skip extension (full length).
-                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody && !wallKeepsDrawnFace(vWall)) {
+                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody && usesLegacyPlan(vWall)) {
                         // Extend vertical wall (wall2) to horizontal wall's line
                         const vEndpointYCaseA = vIsAtStart ? vWall.start_y : vWall.end_y;
                         const vOtherYCaseA = vIsAtStart ? vWall.end_y : vWall.start_y;
@@ -6428,7 +6436,7 @@ export function drawWalls({
                     // Case B: Horizontal is wall2, Vertical is wall1
                     // Only extend wall2 if the intersection is at an actual endpoint of wall2
                     // If wall2 is intersected in the middle (isOnBody), skip extension (it should remain full length)
-                    else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && !vHasColinearPartner && !hHasColinearPartner && !wallKeepsDrawnFace(hWall)) {
+                    else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && !vHasColinearPartner && !hHasColinearPartner && usesLegacyPlan(hWall)) {
                         // Extend horizontal wall (wall2) to vertical wall's line
                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
@@ -6633,7 +6641,7 @@ export function drawWalls({
                     // each tip out by another full thickness.
                     // Extend vertical wall lines to horizontal wall's line
                     // Only extend if intersection is at an endpoint (not in the middle)
-                    if (!verticalWall.isOnBody && !wallKeepsDrawnFace(vWall)) {
+                    if (!verticalWall.isOnBody && usesLegacyPlan(vWall)) {
                         if (vIsAtStart) {
                             vLines.line1[0].y = targetY;
                             vLines.line2[0].y = targetY;
@@ -6693,7 +6701,7 @@ export function drawWalls({
                     
                     // Extend horizontal wall lines to vertical wall's line
                     // Only extend if intersection is at an endpoint (not in the middle)
-                    if (!horizontalWall.isOnBody && !wallKeepsDrawnFace(hWall)) {
+                    if (!horizontalWall.isOnBody && usesLegacyPlan(hWall)) {
                         if (hIsAtStart) {
                             hLines.line1[0].x = targetX;
                             hLines.line2[0].x = targetX;
@@ -6913,7 +6921,7 @@ export function drawWalls({
             }
         }
 
-        if (!wallKeepsDrawnFace(wall)) {
+        if (usesLegacyPlan(wall)) {
             const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, walls);
             if (typeof forcedFlip === 'boolean') {
                 const len = Math.hypot(wallDx, wallDy) || 1;

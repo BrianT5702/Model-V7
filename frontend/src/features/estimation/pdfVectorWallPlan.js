@@ -9,7 +9,7 @@ import {
     calculateOffsetPoints,
     calculateActualProjectDimensions,
     buildWallOffsetOptions,
-    wallKeepsDrawnFace,
+    wallUsesLegacyPlanAdjustments,
     resolve45CutForceShouldFlip,
     drawWallPlanDimensionsLayer,
     drawOverallProjectDimensions,
@@ -307,8 +307,10 @@ export function drawVectorWallPlan(
     fitToPage,
     /** When false, wall outline lines run continuously through door openings (doors still drawn on top). */
     breakWallLinesAtDoors = true,
-    panelOptimization = null
+    panelOptimization = null,
+    legacyWallPlan = true
 ) {
+    const usesLegacyPlan = (wall) => wallUsesLegacyPlanAdjustments(wall, legacyWallPlan);
                     // Add new page for vector plan
                     doc.addPage('a4', planPageOrientation);
                     const planPageWidth = doc.internal.pageSize.width;
@@ -361,7 +363,7 @@ export function drawVectorWallPlan(
                         const y2 = wall.end_y || 0;
                         const thickness = wall.thickness || 200;
                         const offsetOpts = buildWallOffsetOptions(wall, roomsToDraw) || {};
-                        if (wallKeepsDrawnFace(wall)) {
+                        if (!usesLegacyPlan(wall)) {
                             offsetOpts.noAutoFlip = true;
                         } else {
                             const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
@@ -753,7 +755,7 @@ export function drawVectorWallPlan(
                         // Use scale = 1 for model space calculations (we'll transform to PDF space later)
                         const gapPixels = wallThickness; // In model space, gap = thickness
                         const offsetOpts = buildWallOffsetOptions(wall, roomsToDraw) || {};
-                        if (wallKeepsDrawnFace(wall)) {
+                        if (!usesLegacyPlan(wall)) {
                             offsetOpts.noAutoFlip = true;
                         } else {
                             const forcedFlip = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
@@ -909,7 +911,7 @@ export function drawVectorWallPlan(
                                     const isHorizontalWall1 = String(jointWall1Id) === String(hWall.id);
 
                                     if (phase === 'extend') {
-                                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody && !wallKeepsDrawnFace(vWall)) {
+                                    if (isHorizontalWall1 && !isVerticalWall1 && !verticalWall.isOnBody && usesLegacyPlan(vWall)) {
                                         const vEndpointYCaseA = vIsAtStart ? vWall.start_y : vWall.end_y;
                                         const vOtherYCaseA = vIsAtStart ? vWall.end_y : vWall.start_y;
                                         const isTopEndCaseA = vEndpointYCaseA < vOtherYCaseA;
@@ -948,7 +950,7 @@ export function drawVectorWallPlan(
                                             vLines.line1[1].y = targetY;
                                             vLines.line2[1].y = targetY;
                                         }
-                                    } else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && !wallKeepsDrawnFace(hWall)) {
+                                    } else if (isVerticalWall1 && !isHorizontalWall1 && !horizontalWall.isOnBody && usesLegacyPlan(hWall)) {
                                         const vLine1X = (vLines.line1[0].x + vLines.line1[1].x) / 2;
                                         const vLine2X = (vLines.line2[0].x + vLines.line2[1].x) / 2;
                                         const vLeftmostLine = vLine1X < vLine2X ? vLines.line1 : vLines.line2;
@@ -1079,7 +1081,7 @@ export function drawVectorWallPlan(
                                             targetY = hLowerStartY;
                                         }
                                     }
-                                    if (!verticalWall.isOnBody && !wallKeepsDrawnFace(vWall)) {
+                                    if (!verticalWall.isOnBody && usesLegacyPlan(vWall)) {
                                         if (vIsAtStart) {
                                             vLines.line1[0].y = targetY;
                                             vLines.line2[0].y = targetY;
@@ -1123,7 +1125,7 @@ export function drawVectorWallPlan(
                                             targetX = vLeftStartX;
                                         }
                                     }
-                                    if (!horizontalWall.isOnBody && !wallKeepsDrawnFace(hWall)) {
+                                    if (!horizontalWall.isOnBody && usesLegacyPlan(hWall)) {
                                         if (hIsAtStart) {
                                             hLines.line1[0].x = targetX;
                                             hLines.line2[0].x = targetX;
@@ -1384,7 +1386,7 @@ export function drawVectorWallPlan(
                             }
                         }
                         
-                        if (!wallKeepsDrawnFace(wall)) {
+                        if (usesLegacyPlan(wall)) {
                             const forcedFlipForWall = resolve45CutForceShouldFlip(wall, intersections, wallsToDraw);
                             if (typeof forcedFlipForWall === 'boolean') {
                                 const dx = wall.end_x - wall.start_x;
@@ -2171,7 +2173,8 @@ export async function buildWallPlanPreviewPdfBlob({
     doors,
     walls,
     planPageOrientation,
-    fitToPage
+    fitToPage,
+    legacyWallPlan = true
 }) {
     if (!api || !projectId || !walls || walls.length === 0) {
         return null;
@@ -2247,7 +2250,9 @@ export async function buildWallPlanPreviewPdfBlob({
                     wallsForVector,
                     planPageOrientation,
                     fitToPage,
-                    false
+                    false,
+                    null,
+                    legacyWallPlan
                 );
                 anyPage = true;
             }
@@ -2266,7 +2271,9 @@ export async function buildWallPlanPreviewPdfBlob({
             wallsForVector,
             planPageOrientation,
             fitToPage,
-            false
+            false,
+            null,
+            legacyWallPlan
         );
         anyPage = true;
     }
