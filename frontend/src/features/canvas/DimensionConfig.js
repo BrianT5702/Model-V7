@@ -18,15 +18,12 @@ export const DIMENSION_CONFIG = {
     // Walls whose lines fall within this distance count as one straight run for dimensioning,
     // so their labels share a side and an offset instead of splitting across the run.
     NEAR_WALL_RUN_TOLERANCE_MM: 200,
-    // An interior wall's dimension belongs beside that wall. When there is no clear space
-    // there, the old behaviour moved the label out to the project's exterior dimension
-    // frame, which reads as if it measures a different wall and crowds that row. Drafted
-    // layouts instead omit the dimension, so prefer hiding it. Set false to restore the
-    // fallback.
-    HIDE_CROWDED_NEAR_WALL_DIMS: true,
-    // Same rule for the exterior dimension frame: when no row is free, the old behaviour drew
-    // the label anyway, landing it on top of a neighbouring dimension or a door marker.
-    HIDE_OVERLAPPING_EXTERIOR_DIMS: true,
+    // Do not drop a dimension because its text box overlaps something at the current zoom.
+    // The font stays about 10–16px while the plan scales, so a pixel overlap test hides a
+    // number at one zoom and shows it at the next. Keep the label; the row comes from the
+    // model span, not from whether the glyphs fit this frame.
+    HIDE_CROWDED_NEAR_WALL_DIMS: false,
+    HIDE_OVERLAPPING_EXTERIOR_DIMS: false,
     NEAR_WALL_NUDGE_MM: 30,        // Used only for non-near-wall fallback nudging (mm)
     PROJECT_BASE_OFFSET: 14,      // Minimum distance for project dimensions when no wall dims on edge (px)
     PROJECT_OUTER_GAP_AFTER_WALLS: 8, // Project row sits outside outermost wall row by at least this (px)

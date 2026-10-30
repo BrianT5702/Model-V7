@@ -26,12 +26,10 @@ import {
     insetBoundsToInnerFaces
 } from './drawing';
 import {
-    hasLabelOverlap,
     calculateHorizontalLabelBounds,
     calculateRotatedVerticalDimBounds,
     exteriorVerticalTextCenterX,
-    buildVerticalPlanLabelEntry,
-    overlapsDimensionText
+    buildVerticalPlanLabelEntry
 } from './collisionDetection';
 
 /**
@@ -215,26 +213,6 @@ export function drawCeilingPlanDimensionOnContext(
               2
           );
 
-    const cw = state.canvasWidth ?? 1e6;
-    const ch = state.canvasHeight ?? 1e6;
-    const isValidPosition =
-        wallStyleBounds.x >= 0 &&
-        wallStyleBounds.y >= 0 &&
-        wallStyleBounds.x + wallStyleBounds.width <= cw &&
-        wallStyleBounds.y + wallStyleBounds.height <= ch;
-    if (!isValidPosition) {
-        ctx.font = previousFont;
-        return;
-    }
-
-    if (
-        type?.startsWith('alu_rail_') &&
-        hasLabelOverlap(wallStyleBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)
-    ) {
-        ctx.font = previousFont;
-        return;
-    }
-
     const clipBounds = insetBoundsToInnerFaces(bounds, state.walls);
     drawOrthoPlanDimensionGeometryLikeWall(
         ctx,
@@ -261,29 +239,27 @@ export function drawCeilingPlanDimensionOnContext(
         });
     }
 
-    if (!overlapsDimensionText(wallStyleBounds, allLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
-        if (isHorizontal) {
-            allLabels.push({
-                x: wallStyleBounds.x,
-                y: wallStyleBounds.y,
-                width: wallStyleBounds.width,
-                height: wallStyleBounds.height,
-                cx: labelX,
-                cy: labelY,
-                side: dimSide,
-                text,
-                angle: angleDeg,
+    if (isHorizontal) {
+        allLabels.push({
+            x: wallStyleBounds.x,
+            y: wallStyleBounds.y,
+            width: wallStyleBounds.width,
+            height: wallStyleBounds.height,
+            cx: labelX,
+            cy: labelY,
+            side: dimSide,
+            text,
+            angle: angleDeg,
+            type: 'plan',
+            textColor: color
+        });
+    } else {
+        allLabels.push(
+            buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
                 type: 'plan',
                 textColor: color
-            });
-        } else {
-            allLabels.push(
-                buildVerticalPlanLabelEntry(labelX, labelY, textWidth, fontSize, dimSide, text, angleDeg, {
-                    type: 'plan',
-                    textColor: color
-                })
-            );
-        }
+            })
+        );
     }
     ctx.font = previousFont;
 }

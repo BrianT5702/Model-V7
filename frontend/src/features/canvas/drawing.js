@@ -15,7 +15,6 @@ import {
     formatGroupedDimensionLabel,
     planCeilingValueDedupKey,
     applyNearWallFontSize,
-    nearWallLabelSeparationPx,
     getPlanExteriorSide,
     getDimensionEdge
 } from './DimensionConfig.js';
@@ -38,11 +37,7 @@ import {
     calculateRotatedVerticalDimBounds,
     calculateNearWallHorizontalDimBounds,
     smartPlacement,
-    isLabelPlacementClean,
-    overlapsDimensionText,
-    overlapsDoorObstacle,
     checkBoxOverlap,
-    tryPlaceExteriorDimensionLabel,
     exteriorVerticalLabelBounds
 } from './collisionDetection.js';
 import { isPointInPolygon, isPartitionWall, calculateLineIntersection } from './utils.js';
@@ -2125,14 +2120,9 @@ function placeNearWallWallDimension({
     offsetY,
     fontSize,
     textWidth,
-    placedLabels,
-    wallLinesMap,
     rooms,
-    initialScale,
     rotatedVerticalText,
     calculateBounds,
-    spanLo = null,
-    spanHi = null,
 }) {
     // Walls lying on one straight line form a single dimension run. Identify the run by the
     // line it sits on, so chained lengths share a side and an offset while walls on other
@@ -2143,8 +2133,8 @@ function placeNearWallWallDimension({
         : 'unscoped';
     const preferredSide = dimensionLanes?._nearWallRunSides?.[runKey] ?? null;
 
-    // Stay on this wall's span. If the midpoint sits on a door, step out or slide
-    // along the panel so the number stays visible instead of disappearing.
+    // Same side and offset for the whole run, taken from the wall geometry.
+    // Do not walk outward until the text box is clear — that walk changes with zoom.
     const near = tryPlaceNearWallLabel({
         wall: wallForNear,
         anchorXModel: wallMidX,
@@ -2155,61 +2145,17 @@ function placeNearWallWallDimension({
         fontSize,
         calculateBounds,
         textWidth,
-        placedLabels,
-        wallLinesMap,
         modelBounds,
         rooms,
-        dimensionLanes,
-        initialScale,
         rotatedVerticalText,
-        preferredSide,
-        isHorizontal,
-        spanLo,
-        spanHi
+        preferredSide
     });
     if (!near) return null;
 
     const anchorXModel = Number.isFinite(near.anchorXModel) ? near.anchorXModel : wallMidX;
     const anchorYModel = Number.isFinite(near.anchorYModel) ? near.anchorYModel : wallMidY;
-
-    const hostWallData = findWallLineDataForWall(wallLinesMap, wallForNear);
     const sharedKey = runKey;
-    const laneSpacing = DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
-    const maxSteps = nearWallMaxStepsForDoors(placedLabels, laneSpacing);
-
-    const tryOffset = (off) => {
-        const nx = near.ext?.nx ?? 0;
-        const ny = near.ext?.ny ?? 0;
-        const labelX = anchorXModel * scaleFactor + offsetX + nx * off;
-        const labelY = anchorYModel * scaleFactor + offsetY + ny * off;
-        const bounds = calculateBounds(labelX, labelY, textWidth);
-        if (
-            !isLabelAcceptableForNearWallPlacement(
-                labelX,
-                labelY,
-                bounds,
-                placedLabels,
-                hostWallData,
-                scaleFactor,
-                offsetX,
-                offsetY,
-                initialScale,
-                wallLinesMap
-            )
-        ) {
-            return null;
-        }
-        return {
-            ...near,
-            labelX,
-            labelY,
-            off,
-            bounds,
-        };
-    };
-
-    // Prefer a shared edge offset (aligned chains), but never accept a colliding snap.
-    let positioned = applyNearWallSharedOffset(
+    const positioned = applyNearWallSharedOffset(
         dimensionLanes,
         near,
         sharedKey,
@@ -2221,38 +2167,9 @@ function placeNearWallWallDimension({
         calculateBounds,
         textWidth
     );
-    if (
-        positioned
-        && !isLabelAcceptableForNearWallPlacement(
-            positioned.labelX,
-            positioned.labelY,
-            positioned.bounds,
-            placedLabels,
-            hostWallData,
-            scaleFactor,
-            offsetX,
-            offsetY,
-            initialScale,
-            wallLinesMap
-        )
-    ) {
-        positioned = null;
-    }
-
-    if (!positioned) {
-        const startOff = near.off ?? 0;
-        for (let step = 0; step < maxSteps; step++) {
-            const candidate = tryOffset(startOff + step * laneSpacing);
-            if (candidate) {
-                positioned = candidate;
-                break;
-            }
-        }
-    }
-
     if (!positioned) return null;
 
-    // Keep later labels on this edge at least this far out (collision-aware).
+    // Keep later labels on this run on the same side and offset.
     if (dimensionLanes) {
         if (!dimensionLanes._nearWallRunSides) dimensionLanes._nearWallRunSides = {};
         const runSide = positioned.side || near.side;
@@ -2272,37 +2189,6 @@ function placeNearWallWallDimension({
     }
 
     return positioned;
-}
-
-function isLabelAcceptableForNearWallPlacement(
-    labelX,
-    labelY,
-    labelBounds,
-    placedLabels,
-    hostWallData,
-    scaleFactor,
-    offsetX,
-    offsetY,
-    initialScale = 1,
-    wallLinesMap = null
-) {
-    const sep = nearWallLabelSeparationPx(scaleFactor, initialScale);
-    if (hasLabelOverlap(labelBounds, placedLabels, sep)) {
-        return false;
-    }
-    if (wallLinesMap && doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
-        return false;
-    }
-    if (!hostWallData) {
-        return true;
-    }
-    if (isPointInsideWallCorridor(labelX, labelY, hostWallData, scaleFactor, offsetX, offsetY, 0)) {
-        return false;
-    }
-    if (doesLabelOverlapWallCorridor(labelBounds, hostWallData, scaleFactor, offsetX, offsetY, 0)) {
-        return false;
-    }
-    return true;
 }
 
 let wallCorridorIndex = null;
@@ -2362,67 +2248,11 @@ function corridorEntriesNear(labelBounds) {
     return hits;
 }
 
-function doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY) {
-    if (!(wallLinesMap instanceof Map) || wallLinesMap.size === 0) return false;
-    const nearby = corridorEntriesNear(labelBounds);
-    if (nearby) {
-        for (const entry of nearby) {
-            if (checkBoxOverlap(labelBounds, entry.bounds2, 4)) return true;
-        }
-        return false;
-    }
-    for (const [, wallData] of wallLinesMap) {
-        if (doesLabelOverlapWallCorridor(labelBounds, wallData, scaleFactor, offsetX, offsetY, 2)) {
-            return true;
-        }
-    }
-    return false;
-}
-
-function nearWallMaxStepsForDoors(placedLabels, laneSpacing) {
-    const base = DIMENSION_CONFIG.NEAR_WALL_MAX_PLACEMENT_STEPS;
-    let thin = 0;
-    for (const existing of placedLabels || []) {
-        if (existing?.type !== 'door_obstacle') continue;
-        const w = Number(existing.width) || 0;
-        const h = Number(existing.height) || 0;
-        thin = Math.max(thin, Math.min(w, h) || Math.max(w, h));
-    }
-    if (thin <= 0) return Math.max(base, 8);
-    return Math.min(40, base + Math.ceil(thin / Math.max(2, laneSpacing)) + 8);
-}
-
-function nearWallSpanAnchors({
-    anchorXModel,
-    anchorYModel,
-    isHorizontal,
-    spanLo,
-    spanHi,
-    textWidth,
-    scaleFactor
-}) {
-    const anchors = [{ ax: anchorXModel, ay: anchorYModel }];
-    if (!Number.isFinite(spanLo) || !Number.isFinite(spanHi) || !(spanHi > spanLo)) {
-        return anchors;
-    }
-    const padMm = ((textWidth || 40) / 2 + 4) / Math.max(scaleFactor || 0.01, 1e-6);
-    const usableLo = spanLo + padMm;
-    const usableHi = spanHi - padMm;
-    if (!(usableHi > usableLo)) return anchors;
-    const mid = isHorizontal ? anchorXModel : anchorYModel;
-    const steps = 8;
-    for (let i = 0; i <= steps; i++) {
-        const pos = usableLo + ((usableHi - usableLo) * i) / steps;
-        if (Math.abs(pos - mid) < 1) continue;
-        if (isHorizontal) anchors.push({ ax: pos, ay: anchorYModel });
-        else anchors.push({ ax: anchorXModel, ay: pos });
-    }
-    return anchors;
-}
-
 /**
- * Near-wall label: smaller text, stay close to the wall. If the midpoint sits on a
- * door, step outward or slide along this span so the number stays on the drawing.
+ * Near-wall label beside the wall face, at the span midpoint.
+ * The side and offset come from the wall, not from whether the text box is clear
+ * at this zoom. A pixel search hides the number when the bay is smaller than the
+ * text and shows it again once you zoom in.
  */
 function tryPlaceNearWallLabel({
     wall,
@@ -2434,20 +2264,12 @@ function tryPlaceNearWallLabel({
     fontSize,
     calculateBounds,
     textWidth,
-    placedLabels,
-    wallLinesMap,
     modelBounds,
     rooms,
-    dimensionLanes = null,
-    initialScale = 1,
     rotatedVerticalText = false,
-    preferredSide = null,
-    isHorizontal = null,
-    spanLo = null,
-    spanHi = null
+    preferredSide = null
 }) {
     if (!wall) return null;
-    const hostWallData = findWallLineDataForWall(wallLinesMap, wall);
     const baseOff = computeNearWallLabelOffsetPx(
         wall,
         scaleFactor,
@@ -2455,111 +2277,26 @@ function tryPlaceNearWallLabel({
         textWidth,
         rotatedVerticalText
     );
-    const laneSpacing = DIMENSION_CONFIG.NEAR_WALL_LANE_SPACING;
     const candidates = buildNearWallPlacementCandidates(wall, rooms, modelBounds);
     const ext = getExteriorNormalUnit(wall, rooms, modelBounds);
     const extEdge = exteriorSideName(ext.nx, ext.ny);
-    const sorted = [...candidates].sort((a, b) => {
-        if (a.edge === preferredSide && b.edge !== preferredSide) return -1;
-        if (b.edge === preferredSide && a.edge !== preferredSide) return 1;
-        if (a.edge === extEdge && b.edge !== extEdge) return -1;
-        if (b.edge === extEdge && a.edge !== extEdge) return 1;
-        const la = dimensionLanes?.[a.edge] ?? 0;
-        const lb = dimensionLanes?.[b.edge] ?? 0;
-        return la - lb;
-    });
-
-    const alongHorizontal =
-        isHorizontal != null
-            ? isHorizontal
-            : Math.abs(ext.ny) >= Math.abs(ext.nx);
-    const anchors = nearWallSpanAnchors({
+    const cand =
+        candidates.find((c) => preferredSide && c.edge === preferredSide) ||
+        candidates.find((c) => c.edge === extEdge) ||
+        candidates[0];
+    if (!cand) return null;
+    const labelX = anchorXModel * scaleFactor + offsetX + cand.nx * baseOff;
+    const labelY = anchorYModel * scaleFactor + offsetY + cand.ny * baseOff;
+    return {
+        labelX,
+        labelY,
+        bounds: calculateBounds(labelX, labelY, textWidth),
+        ext: { nx: cand.nx, ny: cand.ny },
+        side: cand.edge,
+        off: baseOff,
         anchorXModel,
-        anchorYModel,
-        isHorizontal: alongHorizontal,
-        spanLo,
-        spanHi,
-        textWidth,
-        scaleFactor
-    });
-    const maxSteps = nearWallMaxStepsForDoors(placedLabels, laneSpacing);
-
-    const accept = (labelX, labelY, bounds, cand, off, ax, ay) => {
-        if (
-            !isLabelAcceptableForNearWallPlacement(
-                labelX,
-                labelY,
-                bounds,
-                placedLabels,
-                hostWallData,
-                scaleFactor,
-                offsetX,
-                offsetY,
-                initialScale,
-                wallLinesMap
-            )
-        ) {
-            return null;
-        }
-        if (dimensionLanes && cand.edge) {
-            dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
-        }
-        return {
-            labelX,
-            labelY,
-            bounds,
-            ext: { nx: cand.nx, ny: cand.ny },
-            side: cand.edge,
-            off,
-            anchorXModel: ax,
-            anchorYModel: ay
-        };
+        anchorYModel
     };
-
-    for (let step = 0; step < maxSteps; step++) {
-        const off = baseOff + step * laneSpacing;
-        for (const cand of sorted) {
-            for (const { ax, ay } of anchors) {
-                const labelX = ax * scaleFactor + offsetX + cand.nx * off;
-                const labelY = ay * scaleFactor + offsetY + cand.ny * off;
-                const bounds = calculateBounds(labelX, labelY, textWidth);
-                const placed = accept(labelX, labelY, bounds, cand, off, ax, ay);
-                if (placed) return placed;
-            }
-        }
-    }
-
-    // Door blocked every near lane: still draw, just far enough out that the hatch is clear.
-    const sep = nearWallLabelSeparationPx(scaleFactor, initialScale);
-    for (let step = maxSteps; step < maxSteps + 16; step++) {
-        const off = baseOff + step * laneSpacing;
-        for (const cand of sorted) {
-            const ax = anchorXModel;
-            const ay = anchorYModel;
-            const labelX = ax * scaleFactor + offsetX + cand.nx * off;
-            const labelY = ay * scaleFactor + offsetY + cand.ny * off;
-            const bounds = calculateBounds(labelX, labelY, textWidth);
-            if (overlapsDoorObstacle(bounds, placedLabels, sep)) continue;
-            if (doesNearWallLabelOverlapAnyWall(bounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
-                continue;
-            }
-            if (overlapsDimensionText(bounds, placedLabels, sep)) continue;
-            if (dimensionLanes && cand.edge) {
-                dimensionLanes[cand.edge] = (dimensionLanes[cand.edge] ?? 0) + 1;
-            }
-            return {
-                labelX,
-                labelY,
-                bounds,
-                ext: { nx: cand.nx, ny: cand.ny },
-                side: cand.edge,
-                off,
-                anchorXModel: ax,
-                anchorYModel: ay
-            };
-        }
-    }
-    return null;
 }
 
 /** Screen px from building envelope to outer edge of an exterior wall/panel label. */
@@ -2588,62 +2325,6 @@ function measureExteriorLabelOutsetPx(
     if (edge === 'left') return Math.max(0, leftEdge - l);
     if (edge === 'right') return Math.max(0, r - rightEdge);
     return 0;
-}
-
-function labelBoundsToModelBounds(labelBounds, scaleFactor, offsetX, offsetY) {
-    return {
-        minX: (labelBounds.x - offsetX) / scaleFactor,
-        maxX: (labelBounds.x + labelBounds.width - offsetX) / scaleFactor,
-        minY: (labelBounds.y - offsetY) / scaleFactor,
-        maxY: (labelBounds.y + labelBounds.height - offsetY) / scaleFactor
-    };
-}
-
-/** Full wall-length dimensions must sit outside the project envelope (not in the interior). */
-function isLabelOutsideModelBounds(labelBounds, modelBounds, scaleFactor, offsetX, offsetY, minSeparationMm = 15) {
-    if (!modelBounds) return true;
-    const mm = labelBoundsToModelBounds(labelBounds, scaleFactor, offsetX, offsetY);
-    const sep = minSeparationMm;
-    return (
-        mm.maxX < modelBounds.minX - sep ||
-        mm.minX > modelBounds.maxX + sep ||
-        mm.maxY < modelBounds.minY - sep ||
-        mm.minY > modelBounds.maxY + sep
-    );
-}
-
-/**
- * @param {boolean} isNearWall - true for short/near-wall dims (may sit inside project area, outside wall slab only)
- */
-function isLabelAcceptableForWallDimension(
-    labelBounds,
-    placedLabels,
-    wallLinesMap,
-    modelBounds,
-    scaleFactor,
-    offsetX,
-    offsetY,
-    isNearWall,
-    initialScale = 1,
-) {
-    if (isNearWall) {
-        const sep = nearWallLabelSeparationPx(scaleFactor, initialScale);
-        if (hasLabelOverlap(labelBounds, placedLabels, sep)) {
-            return false;
-        }
-        if (wallLinesMap && doesNearWallLabelOverlapAnyWall(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
-            return false;
-        }
-    } else if (!isLabelPlacementClean(labelBounds, placedLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
-        return false;
-    }
-    if (!isNearWall && !isLabelOutsideModelBounds(labelBounds, modelBounds, scaleFactor, offsetX, offsetY)) {
-        return false;
-    }
-    if (!isNearWall && wallLinesMap && doesLabelOverlapAnyWallLine(labelBounds, wallLinesMap, scaleFactor, offsetX, offsetY)) {
-        return false;
-    }
-    return true;
 }
 
 /** Default exterior row position when sliding finds no gap — still draw the dimension. */
@@ -2680,16 +2361,14 @@ function fallbackExteriorWallDimensionPosition({
 }
 
 /**
- * Exterior plan dim: span lanes group chain segments on one row.
- * Keep the number on the midpoint of its own span. When lockRow is true
- * (wall chain dims), never bump to another row or slide along the line.
+ * Exterior plan dim on the row already chosen from its model span.
+ * Keep that row at every zoom. A pixel-overlap search moves the number onto
+ * another row, then drops it, as the font stays ~10px and the bay changes size.
  */
 export function placeExteriorWallDimensionAvoidingLabels({
     isHorizontal,
     side,
     rowOffsetPx,
-    spanLo,
-    spanHi,
     anchorX,
     anchorY,
     bounds,
@@ -2697,121 +2376,33 @@ export function placeExteriorWallDimensionAvoidingLabels({
     offsetX,
     offsetY,
     textWidth,
-    placedLabels,
     paddingH = 2,
     paddingV = 8,
     fixedLabelX = null,
-    fontSize = null,
-    lockRow = false
+    fontSize = null
 }) {
-    const sep = DIMENSION_CONFIG.LABEL_MIN_SEPARATION;
-    const rowStep = DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
-    const maxBumps = lockRow ? 6 : DIMENSION_CONFIG.MAX_ATTEMPTS;
-    let rowOffset = rowOffsetPx;
     const columnLocked = !isHorizontal && fixedLabelX != null && Number.isFinite(fixedLabelX);
-
-    const boundsFor = (lx, ly) =>
-        isHorizontal
-            ? calculateHorizontalLabelBounds(lx, ly, textWidth, paddingH, paddingV)
-            : exteriorVerticalLabelBounds(lx, ly, textWidth, fontSize, paddingH, paddingV);
-
-    const tryOnce = (rowOff, yBiasPx = 0) => {
-        let placed = tryPlaceExteriorDimensionLabel({
-            isHorizontal,
-            side,
-            rowOffsetPx: rowOff,
-            spanLo,
-            spanHi,
-            anchorX,
-            anchorY,
-            bounds,
-            scaleFactor,
-            offsetX,
-            offsetY,
-            textWidth,
-            paddingH,
-            paddingV,
-            placedLabels,
-            fixedLabelX: columnLocked ? fixedLabelX : null,
-            fontSize,
-            yBiasPx,
-            lockAlongSpan: lockRow
-        });
-        if (!placed) {
-            placed = fallbackExteriorWallDimensionPosition({
-                isHorizontal,
-                side,
-                rowOffsetPx: rowOff,
-                anchorX,
-                anchorY,
-                bounds,
-                scaleFactor,
-                offsetX,
-                offsetY,
-                textWidth,
-                paddingH,
-                paddingV
-            });
-            if (columnLocked && placed) {
-                placed = { ...placed, labelX: fixedLabelX };
-            }
-        }
-        if (!placed) {
-            return { placed: null, labelBounds: null };
-        }
-        const labelBounds = boundsFor(placed.labelX, placed.labelY);
-        return { placed, labelBounds };
-    };
-
-    for (let bump = 0; bump <= maxBumps; bump++) {
-        if (columnLocked && !lockRow) {
-            const yTry = [0];
-            for (let s = rowStep; s <= rowStep * maxBumps; s += rowStep) {
-                yTry.push(s, -s);
-            }
-            for (const yBiasPx of yTry) {
-                const { placed, labelBounds } = tryOnce(rowOffset, yBiasPx);
-                if (placed && labelBounds && isLabelPlacementClean(labelBounds, placedLabels, sep)) {
-                    return { ...placed, rowOffset, labelBounds };
-                }
-            }
-        } else {
-            const { placed, labelBounds } = tryOnce(rowOffset, 0);
-            if (placed && labelBounds && isLabelPlacementClean(labelBounds, placedLabels, sep)) {
-                return { ...placed, rowOffset, labelBounds };
-            }
-        }
-        rowOffset += rowStep;
+    let placed = fallbackExteriorWallDimensionPosition({
+        isHorizontal,
+        side,
+        rowOffsetPx,
+        anchorX,
+        anchorY,
+        bounds,
+        scaleFactor,
+        offsetX,
+        offsetY,
+        textWidth,
+        paddingH,
+        paddingV
+    });
+    if (!placed) return null;
+    if (columnLocked) {
+        placed = { ...placed, labelX: fixedLabelX };
     }
-
-    // Chained exterior dims stay on their span midpoint. Step the row out if a door
-    // is in the way so the number remains visible.
-    if (lockRow) {
-        for (let extra = 0; extra <= 8; extra++) {
-            const tryOff = rowOffsetPx + extra * rowStep;
-            const { placed, labelBounds } = tryOnce(tryOff, 0);
-            if (placed && labelBounds && isLabelPlacementClean(labelBounds, placedLabels, sep)) {
-                return { ...placed, rowOffset: tryOff, labelBounds };
-            }
-        }
-        const { placed, labelBounds } = tryOnce(rowOffsetPx, 0);
-        if (placed && labelBounds && !overlapsDimensionText(labelBounds, placedLabels, sep)
-            && !overlapsDoorObstacle(labelBounds, placedLabels, sep)) {
-            return { ...placed, rowOffset: rowOffsetPx, labelBounds };
-        }
-        return null;
-    }
-
-    // Every candidate row collided. Placing one anyway stacks this text on a neighbouring
-    // dimension or a door marker, which is worse than the number being absent.
-    if (DIMENSION_CONFIG.HIDE_OVERLAPPING_EXTERIOR_DIMS) {
-        return null;
-    }
-    // Same-row fallback: keep chain level even if text is a bit tight
-    const { placed, labelBounds } = tryOnce(rowOffsetPx, 0);
-    if (!placed) {
-        return null;
-    }
+    const labelBounds = isHorizontal
+        ? calculateHorizontalLabelBounds(placed.labelX, placed.labelY, textWidth, paddingH, paddingV)
+        : exteriorVerticalLabelBounds(placed.labelX, placed.labelY, textWidth, fontSize, paddingH, paddingV);
     return { ...placed, rowOffset: rowOffsetPx, labelBounds };
 }
 
@@ -4405,26 +3996,6 @@ export function drawDimensions(
             const Pe_ = { x: Pe.x + nx * dOff, y: Pe.y + ny * dOff };
 
             const obliquePreviewBounds = obliqueBounds(labelX, labelY, textWidth);
-            if (
-                isNearWallDimension &&
-                !isLabelAcceptableForWallDimension(
-                    obliquePreviewBounds,
-                    placedLabels,
-                    wallLinesMap,
-                    modelBounds,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    true,
-                    initialScale,
-                    labelX,
-                    labelY,
-                    textWidth
-                )
-            ) {
-                context.restore();
-                return;
-            }
 
             if (!isNearWallDimension && dimensionEdgeExtents) {
                 const obliqueEdge = placement.side === 'side1' ? 'left' : 'right';
@@ -4648,30 +4219,6 @@ export function drawDimensions(
                 labelX = ((dimStartX + dimEndX) / 2) * scaleFactor + offsetX;
             }
 
-            const hPreviewBounds = isNearWallDimension
-                ? calculateNearWallHorizontalDimBounds(labelX, labelY, textWidth, fontSize)
-                : calculateHorizontalLabelBounds(labelX, labelY, textWidth, 2, 8);
-            if (
-                isNearWallDimension &&
-                !isLabelAcceptableForWallDimension(
-                    hPreviewBounds,
-                    placedLabels,
-                    wallLinesMap,
-                    modelBounds,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    true,
-                    initialScale,
-                    labelX,
-                    labelY,
-                    textWidth
-                )
-            ) {
-                context.restore();
-                return;
-            }
-
             const textPadding = 2;
             const startXScreen = dimStartX * scaleFactor + offsetX;
             const endXScreen = dimEndX * scaleFactor + offsetX;
@@ -4743,7 +4290,7 @@ export function drawDimensions(
                 });
             }
             placedLabels.push(hLabel);
-            if (collectOnly && !overlapsDimensionText(hBounds, allLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
+            if (collectOnly) {
                 allLabels.push({ ...hLabel });
             }
         } else {
@@ -4919,30 +4466,6 @@ export function drawDimensions(
 
             labelY = ((dimStartY + dimEndY) / 2) * scaleFactor + offsetY;
 
-            const vPreviewBounds = isNearWallDimension
-                ? calculateRotatedVerticalDimBounds(labelX, labelY, textWidth, fontSize)
-                : exteriorVerticalLabelBounds(labelX, labelY, textWidth, fontSize, 2, 8);
-            if (
-                isNearWallDimension &&
-                !isLabelAcceptableForWallDimension(
-                    vPreviewBounds,
-                    placedLabels,
-                    wallLinesMap,
-                    modelBounds,
-                    scaleFactor,
-                    offsetX,
-                    offsetY,
-                    true,
-                    initialScale,
-                    labelX,
-                    labelY,
-                    textWidth
-                )
-            ) {
-                context.restore();
-                return;
-            }
-
             const textPadding = 2;
             const startYScreen = dimStartY * scaleFactor + offsetY;
             const endYScreen = dimEndY * scaleFactor + offsetY;
@@ -5012,7 +4535,7 @@ export function drawDimensions(
                 });
             }
             placedLabels.push(vLabel);
-            if (collectOnly && !overlapsDimensionText(vBounds, allLabels, DIMENSION_CONFIG.LABEL_MIN_SEPARATION)) {
+            if (collectOnly) {
                 allLabels.push({ ...vLabel });
             }
         }
@@ -5986,13 +5509,7 @@ export function drawWallPlanDimensionsLayer({
     }
 
     const allCombinedLabels = [...allLabels, ...allPanelLabels];
-    const paintedBoxes = [];
     allCombinedLabels.forEach((label) => {
-        const box = { x: label.x, y: label.y, width: label.width, height: label.height };
-        if (paintedBoxes.some((existing) => checkBoxOverlap(box, existing, DIMENSION_CONFIG.LABEL_MIN_SEPARATION))) {
-            return;
-        }
-        paintedBoxes.push(box);
         const draw = makeLabelDrawFn(label, scaleFactor, initialScale);
         draw(context);
     });
