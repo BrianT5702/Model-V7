@@ -1592,9 +1592,7 @@ export function createWallMesh(instance, wall) {
   // This prevents unwanted lines from appearing on walls (like vertical lines from geometry artifacts)
   const edgeThreshold = 15; // degrees - only show edges with dihedral angle > 15 degrees
   let edgeLines = null;
-  // Fat edge lines are a separate draw for every wall. A large model orbits
-  // the solid walls only; the outline cost is what makes that orbit stall.
-  if (THREE_CONFIG.EDGE_LINES?.ENABLED && (instance.walls?.length || 0) < 40) {
+  if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
     const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
     // Drop earcut diagonals on the long faces (partial 45° / fill-gap joints)
     const noCapDiags = stripInteriorCapDiagonals(instance.THREE, edges, wallThickness, 0.08);
