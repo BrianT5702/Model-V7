@@ -51,8 +51,9 @@ export const THREE_CONFIG = {
   },
 
   RENDERER: {
-    MAX_PIXEL_RATIO: parseEnvNumber('REACT_APP_THREE_MAX_DPR', 3),
-    QUALITY_BIAS: parseEnvNumber('REACT_APP_THREE_QUALITY_BIAS', 1.25),
+    MAX_PIXEL_RATIO: parseEnvNumber('REACT_APP_THREE_MAX_DPR', 1.5),
+    /** 1 keeps the drawing buffer at the screen's own pixel ratio. 1.25 was rendering extra pixels on every orbit frame. */
+    QUALITY_BIAS: parseEnvNumber('REACT_APP_THREE_QUALITY_BIAS', 1),
     SCREEN_LINE_WIDTH_PX: parseEnvNumber('REACT_APP_THREE_LINE_WIDTH_PX', 1.75),
     LOG_DEPTH_BUFFER:
       !(

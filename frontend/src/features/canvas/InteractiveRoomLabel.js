@@ -549,7 +549,8 @@ const InteractiveRoomLabel = ({
                     transform: 'translate(-50%, -50%)',
                     cursor: isSelectionDisabled ? 'not-allowed' : (isDragging ? 'grabbing' : 'grab'),
                     zIndex: isSelected ? 40 : 30,
-                    userSelect: 'none'
+                    pointerEvents: 'auto',
+                    userSelect: 'none',
                 }}
                 onClick={handleClick}
                 onDoubleClick={handleDoubleClick}

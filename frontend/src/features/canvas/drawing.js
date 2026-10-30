@@ -6019,6 +6019,105 @@ export function drawWallPlanDimensionsLayer({
 }
 
 // Draw all walls on the canvas
+/** Rubber-band wall, length readout, and snap tag. Drawn on top of the cached plan. */
+export function drawTempWallPreview(
+    context,
+    tempWall,
+    scaleFactor,
+    offsetX,
+    offsetY,
+    hoveredPoint,
+    initialScale
+) {
+    if (!context || !tempWall) return;
+    const snapType = tempWall.angleSnapType;
+    const previewColor =
+        snapType === 'horizontal' || snapType === 'vertical' ? '#2196F3' :
+        snapType === 'perpendicular' ? '#FF9800' :
+        snapType === 'parallel' ? '#9C27B0' :
+        '#4CAF50';
+    const strokeLine = (x1, y1, x2, y2, dash) => {
+        context.beginPath();
+        context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
+        context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
+        context.strokeStyle = previewColor;
+        context.lineWidth = 2;
+        context.setLineDash(dash || []);
+        context.stroke();
+        context.setLineDash([]);
+    };
+    if (tempWall.placingSide) {
+        const rx1 = tempWall.anchor_x;
+        const ry1 = tempWall.anchor_y;
+        const rx2 = tempWall.ref_x;
+        const ry2 = tempWall.ref_y;
+        const side = tempWall.offsetSide || { x: 0, y: 1 };
+        const thick = Number(tempWall.thickness) || 100;
+        strokeLine(rx1, ry1, rx2, ry2, []);
+        strokeLine(
+            rx1 + side.x * thick, ry1 + side.y * thick,
+            rx2 + side.x * thick, ry2 + side.y * thick,
+            [5, 5]
+        );
+        drawEndpoints(context, rx1, ry1, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+        drawEndpoints(context, rx2, ry2, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+    } else {
+        strokeLine(tempWall.start_x, tempWall.start_y, tempWall.end_x, tempWall.end_y, [5, 5]);
+        drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+        drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
+    }
+
+    if (snapType) {
+        const tag =
+            snapType === 'horizontal' ? '90° H' :
+            snapType === 'vertical' ? '90° V' :
+            snapType === 'perpendicular' ? '⊥ to slant' :
+            snapType === 'parallel' ? '∥ along slant' :
+            '';
+        if (tag) {
+            const tx = tempWall.end_x * scaleFactor + offsetX + 10;
+            const ty = tempWall.end_y * scaleFactor + offsetY - 10;
+            context.save();
+            context.font = 'bold 11px Segoe UI, Arial, sans-serif';
+            const tw = context.measureText(tag).width;
+            context.fillStyle = 'rgba(255,255,255,0.92)';
+            context.fillRect(tx - 4, ty - 12, tw + 8, 16);
+            context.strokeStyle = previewColor;
+            context.lineWidth = 1;
+            context.strokeRect(tx - 4, ty - 12, tw + 8, 16);
+            context.fillStyle = previewColor;
+            context.fillText(tag, tx, ty);
+            context.restore();
+        }
+    }
+
+    const typed = tempWall.typedLength ? String(tempWall.typedLength) : '';
+    const live = Math.round(Math.hypot(
+        tempWall.end_x - tempWall.start_x,
+        tempWall.end_y - tempWall.start_y
+    ));
+    const label = typed || (live > 0 ? String(live) : '');
+    const suffix = tempWall.placingSide
+        ? '  click the side'
+        : (typed ? '  Enter' : '   type mm, Enter');
+    if (label) {
+        const tx = tempWall.end_x * scaleFactor + offsetX + 12;
+        const ty = tempWall.end_y * scaleFactor + offsetY + 16;
+        context.save();
+        context.font = 'bold 13px Segoe UI, Arial, sans-serif';
+        const text = label + suffix;
+        const textWidth = context.measureText(text).width;
+        context.fillStyle = 'rgba(255,255,255,0.94)';
+        context.fillRect(tx - 4, ty - 13, textWidth + 8, 18);
+        context.strokeStyle = previewColor;
+        context.lineWidth = 1;
+        context.strokeRect(tx - 4, ty - 13, textWidth + 8, 18);
+        context.fillStyle = '#111';
+        context.fillText(text, tx, ty);
+        context.restore();
+    }
+}
+
 export function drawWalls({
     context,
     walls,
@@ -6719,99 +6818,18 @@ export function drawWalls({
         drawGapFillIndicator(context, line1, line2, scaleFactor, offsetX, offsetY);
     });
 
-    // Draw temporary wall while adding wall (skip label collection for temp wall)
+    // Rubber-band is drawn by the caller on top of a cached plan, so a drag
+    // does not rebuild every wall and dimension.
     if (tempWall) {
-        const snapType = tempWall.angleSnapType;
-        const previewColor =
-            snapType === 'horizontal' || snapType === 'vertical' ? '#2196F3' :
-            snapType === 'perpendicular' ? '#FF9800' :
-            snapType === 'parallel' ? '#9C27B0' :
-            '#4CAF50';
-        const strokeLine = (x1, y1, x2, y2, dash) => {
-            context.beginPath();
-            context.moveTo(x1 * scaleFactor + offsetX, y1 * scaleFactor + offsetY);
-            context.lineTo(x2 * scaleFactor + offsetX, y2 * scaleFactor + offsetY);
-            context.strokeStyle = previewColor;
-            context.lineWidth = 2;
-            context.setLineDash(dash || []);
-            context.stroke();
-            context.setLineDash([]);
-        };
-        if (tempWall.placingSide) {
-            const rx1 = tempWall.anchor_x;
-            const ry1 = tempWall.anchor_y;
-            const rx2 = tempWall.ref_x;
-            const ry2 = tempWall.ref_y;
-            const side = tempWall.offsetSide || { x: 0, y: 1 };
-            const thick = Number(tempWall.thickness) || 100;
-            strokeLine(rx1, ry1, rx2, ry2, []);
-            strokeLine(
-                rx1 + side.x * thick, ry1 + side.y * thick,
-                rx2 + side.x * thick, ry2 + side.y * thick,
-                [5, 5]
-            );
-            drawEndpoints(context, rx1, ry1, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
-            drawEndpoints(context, rx2, ry2, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
-        } else {
-            strokeLine(tempWall.start_x, tempWall.start_y, tempWall.end_x, tempWall.end_y, [5, 5]);
-            drawEndpoints(context, tempWall.start_x, tempWall.start_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
-            drawEndpoints(context, tempWall.end_x, tempWall.end_y, scaleFactor, offsetX, offsetY, hoveredPoint, previewColor, 2, initialScale);
-        }
-
-        // Snap mode tag near the free end
-        if (snapType) {
-            const tag =
-                snapType === 'horizontal' ? '90° H' :
-                snapType === 'vertical' ? '90° V' :
-                snapType === 'perpendicular' ? '⊥ to slant' :
-                snapType === 'parallel' ? '∥ along slant' :
-                '';
-            if (tag) {
-                const tx = tempWall.end_x * scaleFactor + offsetX + 10;
-                const ty = tempWall.end_y * scaleFactor + offsetY - 10;
-                context.save();
-                context.font = 'bold 11px Segoe UI, Arial, sans-serif';
-                const tw = context.measureText(tag).width;
-                context.fillStyle = 'rgba(255,255,255,0.92)';
-                context.fillRect(tx - 4, ty - 12, tw + 8, 16);
-                context.strokeStyle = previewColor;
-                context.lineWidth = 1;
-                context.strokeRect(tx - 4, ty - 12, tw + 8, 16);
-                context.fillStyle = previewColor;
-                context.fillText(tag, tx, ty);
-                context.restore();
-            }
-        }
-
-        // The number being typed is the wall length. Thickness is the second line.
-        {
-            const typed = tempWall.typedLength ? String(tempWall.typedLength) : '';
-            const live = Math.round(Math.hypot(
-                tempWall.end_x - tempWall.start_x,
-                tempWall.end_y - tempWall.start_y
-            ));
-            const label = typed || (live > 0 ? String(live) : '');
-            const suffix = tempWall.placingSide
-                ? '  click the side'
-                : (typed ? '  Enter' : '   type mm, Enter');
-            if (label) {
-                const tx = tempWall.end_x * scaleFactor + offsetX + 12;
-                const ty = tempWall.end_y * scaleFactor + offsetY + 16;
-                context.save();
-                context.font = 'bold 13px Segoe UI, Arial, sans-serif';
-                const text = label + suffix;
-                const tw = context.measureText(text).width;
-                context.fillStyle = 'rgba(255,255,255,0.94)';
-                context.fillRect(tx - 4, ty - 13, tw + 8, 18);
-                context.strokeStyle = previewColor;
-                context.lineWidth = 1;
-                context.strokeRect(tx - 4, ty - 13, tw + 8, 18);
-                context.fillStyle = '#111';
-                context.fillText(text, tx, ty);
-                context.restore();
-            }
-        }
-
+        drawTempWallPreview(
+            context,
+            tempWall,
+            scaleFactor,
+            offsetX,
+            offsetY,
+            hoveredPoint,
+            initialScale
+        );
     }
     const { dimensionEdgeExtents } = drawWallPlanDimensionsLayer({
         context,

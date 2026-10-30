@@ -62,6 +62,7 @@ import { detectClickedDoor, detectHoveredDoor, detectDoorTag } from './utils';
 import { resolveDoorPlacement, worldToDoorLocal, getDoorTagModelPoint } from './doorPlacement';
 import { filterDimensions } from './dimensionFilter.js';
 import { planCeilingValueDedupKey } from './DimensionConfig.js';
+import { blitPlanSnapshot, syncPlanHudTransform } from './planInteractionPaint';
 
 const Canvas2D = ({ 
     walls = [], 
@@ -151,10 +152,39 @@ const Canvas2D = ({
     const [typedWallLength, setTypedWallLength] = useState('');
     const typedLengthRef = useRef('');
     const tempWallRef = useRef(null);
+    const liveTempPreviewRef = useRef(false);
     const isDrawingRef = useRef(false);
     const commitTypedWallRef = useRef(async () => {});
-    tempWallRef.current = tempWall;
+    // A rubber-band updates the ref only. Copying state back would snap it to the last click.
+    if (!liveTempPreviewRef.current) {
+        tempWallRef.current = tempWall;
+    }
     isDrawingRef.current = isDrawing;
+    const requestInteractionPaintRef = useRef(() => {});
+    const settleViewRef = useRef(() => {});
+    const viewNeedsRegenRef = useRef(false);
+    const settleTimerRef = useRef(null);
+    const interactionPaintRafRef = useRef(0);
+    const planSnapshotRef = useRef(null);
+    const planHudRef = useRef(null);
+    const labelViewRef = useRef({ offsetX: 0, offsetY: 0, scale: 1 });
+    const hoveredWallRef = useRef(null);
+    const hoveredPointRef = useRef(null);
+    const lineSnapMarksRef = useRef(null);
+    const wallLinesRef = useRef(null);
+    const splitPreviewRef = useRef(null);
+    const splitFaceRef = useRef(null);
+    const splitDistanceRef = useRef(null);
+    const previewTempWall = (value) => {
+        liveTempPreviewRef.current = true;
+        tempWallRef.current = value;
+        requestInteractionPaintRef.current();
+    };
+    const commitTempWall = (value) => {
+        liveTempPreviewRef.current = false;
+        tempWallRef.current = value;
+        setTempWall(value);
+    };
     typedLengthRef.current = typedWallLength;
     const [currentScaleFactor, setCurrentScaleFactor] = useState(1);
     const [intersections, setIntersections] = useState([]);
@@ -594,7 +624,8 @@ const Canvas2D = ({
                     offsetX.current += deltaX;
                     offsetY.current += deltaY;
                     lastTouchPos.current = { x: touch.clientX, y: touch.clientY };
-                    setForceRefresh((prev) => prev + 1);
+                    viewNeedsRegenRef.current = true;
+                    requestInteractionPaintRef.current();
                     e.preventDefault();
                 }
             }
@@ -654,7 +685,8 @@ const Canvas2D = ({
                 isTouchDragging.current = true;
                 isDraggingCanvas.current = true;
                 isZoomed.current = true;
-                setForceRefresh((prev) => prev + 1);
+                viewNeedsRegenRef.current = true;
+                requestInteractionPaintRef.current();
             },
             onTwoFingerPan: (dx, dy) => {
                 offsetX.current += dx;
@@ -662,7 +694,8 @@ const Canvas2D = ({
                 isTouchDragging.current = true;
                 isDraggingCanvas.current = true;
                 isZoomed.current = true;
-                setForceRefresh((prev) => prev + 1);
+                viewNeedsRegenRef.current = true;
+                requestInteractionPaintRef.current();
             },
         });
     }, [planAnnotateMode, planNoteAddMode, canAnnotate, planAnnotationArrowPlacementId]);
@@ -687,8 +720,9 @@ const Canvas2D = ({
             offsetX.current = screenX - modelX * newScale;
             offsetY.current = screenY - modelY * newScale;
             isZoomed.current = true;
-            setCurrentScaleFactor(newScale);
-            setForceRefresh((tick) => tick + 1);
+            viewNeedsRegenRef.current = true;
+            requestInteractionPaintRef.current();
+            settleViewRef.current(false);
         };
         canvas.addEventListener('wheel', onWheel, { passive: false });
         return () => canvas.removeEventListener('wheel', onWheel);
@@ -707,7 +741,7 @@ const Canvas2D = ({
         }
         // Cancel add-wall mode when right-clicking during drawing
         else if (currentMode === 'add-wall' && isDrawing) {
-            setTempWall(null);
+            commitTempWall(null);
             setIsDrawing(false);
             typedLengthRef.current = '';
             setTypedWallLength('');
@@ -719,12 +753,14 @@ const Canvas2D = ({
     useEffect(() => {
         const handleGlobalMouseUp = () => {
             isDraggingCanvas.current = false;
+            settleViewRef.current(true);
         };
         
         const handleGlobalTouchEnd = () => {
             isTouchDragging.current = false;
             isDraggingCanvas.current = false;
             lastTwoFingerCenter.current = null;
+            settleViewRef.current(true);
         };
         
         document.addEventListener('mouseup', handleGlobalMouseUp);
@@ -735,6 +771,9 @@ const Canvas2D = ({
             document.removeEventListener('mouseup', handleGlobalMouseUp);
             document.removeEventListener('touchend', handleGlobalTouchEnd);
             document.removeEventListener('touchcancel', handleGlobalTouchEnd);
+            if (settleTimerRef.current) {
+                clearTimeout(settleTimerRef.current);
+            }
         };
     }, []);
 
@@ -743,7 +782,7 @@ const Canvas2D = ({
         if (!tw) return;
         const len = parseInt(raw, 10);
         if (!len || len <= 0) {
-            setTempWall({ ...tw, typedLength: raw || '' });
+            previewTempWall({ ...tw, typedLength: raw || '' });
             return;
         }
         const end = pointAlongDirection(
@@ -752,7 +791,7 @@ const Canvas2D = ({
             len
         );
         if (!end) return;
-        setTempWall({
+        previewTempWall({
             ...tw,
             end_x: end.x,
             end_y: end.y,
@@ -775,7 +814,7 @@ const Canvas2D = ({
                     setTypedWallLength('');
                     return;
                 }
-                setTempWall(null);
+                commitTempWall(null);
                 setIsDrawing(false);
                 setCurrentMode(null);
                 return;
@@ -820,7 +859,7 @@ const Canvas2D = ({
         if (currentMode !== 'add-wall') {
             // Clear drawing state when not in add-wall mode
             if (isDrawing || tempWall) {
-                setTempWall(null);
+                commitTempWall(null);
                 setIsDrawing(false);
             }
             if (typedLengthRef.current) {
@@ -828,6 +867,7 @@ const Canvas2D = ({
                 setTypedWallLength('');
             }
             setLineSnapMarks(null);
+            lineSnapMarksRef.current = null;
         }
     }, [currentMode, isDrawing, tempWall]);
 
@@ -1611,6 +1651,9 @@ const Canvas2D = ({
 
     const resetSplitState = useCallback((clearError = false) => {
         setSplitTargetWallId(null);
+        splitPreviewRef.current = null;
+        splitFaceRef.current = null;
+        splitDistanceRef.current = null;
         setSplitPreviewPoint(null);
         setSplitPreviewFace(null);
         setSplitDistanceInput('');
@@ -1656,6 +1699,9 @@ const Canvas2D = ({
 
         const distance = parseFloat(value);
         if (Number.isNaN(distance) || distance <= 0) {
+            splitPreviewRef.current = null;
+            splitFaceRef.current = null;
+            splitDistanceRef.current = null;
             setSplitPreviewPoint(null);
             setSplitPreviewFace(null);
             setSplitHoverDistance(null);
@@ -1664,6 +1710,9 @@ const Canvas2D = ({
 
         const wallLength = getWallLength(targetWall);
         if (distance >= wallLength) {
+            splitPreviewRef.current = null;
+            splitFaceRef.current = null;
+            splitDistanceRef.current = null;
             setSplitPreviewPoint(null);
             setSplitPreviewFace(null);
             setSplitHoverDistance(null);
@@ -1672,6 +1721,9 @@ const Canvas2D = ({
 
         const previewPoint = pointAlongWall(targetWall, distance);
         if (!previewPoint) {
+            splitPreviewRef.current = null;
+            splitFaceRef.current = null;
+            splitDistanceRef.current = null;
             setSplitPreviewPoint(null);
             setSplitPreviewFace(null);
             setSplitHoverDistance(null);
@@ -1679,9 +1731,13 @@ const Canvas2D = ({
         }
 
         const roundedPreview = getRoundedPoint(previewPoint);
+        const along = getDistanceFromWallStart(targetWall, roundedPreview);
+        splitPreviewRef.current = roundedPreview;
+        splitFaceRef.current = null;
+        splitDistanceRef.current = Math.round(along);
         setSplitPreviewPoint(roundedPreview);
         setSplitPreviewFace(null);
-        setSplitHoverDistance(getDistanceFromWallStart(targetWall, roundedPreview));
+        setSplitHoverDistance(along);
     };
 
     const handleSplitAtDistance = async () => {
@@ -1731,6 +1787,8 @@ const Canvas2D = ({
             return;
         }
 
+        splitPreviewRef.current = roundedSplitPoint;
+        splitDistanceRef.current = Math.round(getDistanceFromWallStart(targetWall, roundedSplitPoint));
         setSplitPreviewPoint(roundedSplitPoint);
         setSplitHoverDistance(getDistanceFromWallStart(targetWall, roundedSplitPoint));
         setIsProcessingSplit(true);
@@ -1924,6 +1982,7 @@ const Canvas2D = ({
             // Helper to round coordinates
             const roundPoint = (pt) => ({ x: Math.round(pt.x), y: Math.round(pt.y) });
             if (isDrawing) {
+                const tempWall = tempWallRef.current;
                 if (tempWall?.placingSide) {
                     const refStart = { x: tempWall.anchor_x, y: tempWall.anchor_y };
                     const refEnd = { x: tempWall.ref_x, y: tempWall.ref_y };
@@ -1969,7 +2028,7 @@ const Canvas2D = ({
                         console.error('Error managing walls:', error);
                         if (isDatabaseConnectionError(error)) showDatabaseError();
                     }
-                    setTempWall(null);
+                    commitTempWall(null);
                     return;
                 }
                 if (tempWall && parseInt(typedLengthRef.current, 10) > 0) {
@@ -2010,7 +2069,7 @@ const Canvas2D = ({
                     typedLengthRef.current = '';
                     setTypedWallLength('');
                     tempWallRef.current = locked;
-                    setTempWall(locked);
+                    commitTempWall(locked);
                     return;
                 }
             } else {
@@ -2021,7 +2080,7 @@ const Canvas2D = ({
                 let snappedStart = roundPoint(faceStart ? { x: faceStart.x, y: faceStart.y } : { x, y });
                 const hostWall = findHostWallNearPoint(snappedStart, walls, 30);
                 setIsDrawing(true);
-                setTempWall({
+                commitTempWall({
                     start_x: snappedStart.x,
                     start_y: snappedStart.y,
                     end_x: snappedStart.x,
@@ -2125,6 +2184,9 @@ const Canvas2D = ({
 
             if (!splitTargetWallId || wall.id !== splitTargetWallId) {
                 setSplitTargetWallId(wall.id);
+                splitPreviewRef.current = roundedPoint;
+                splitFaceRef.current = facePoint;
+                splitDistanceRef.current = Math.round(getDistanceFromWallStart(wall, roundedPoint));
                 setSplitPreviewPoint(roundedPoint);
                 setSplitPreviewFace(facePoint);
                 setSplitDistanceInput('');
@@ -2146,6 +2208,7 @@ const Canvas2D = ({
             }
 
             setIsProcessingSplit(true);
+            splitPreviewRef.current = roundedPoint;
             setSplitPreviewPoint(roundedPoint);
             try {
                 await onManualWallSplit(wall.id, roundedPoint);
@@ -2294,8 +2357,8 @@ const Canvas2D = ({
             lastMousePos.current = { x: event.clientX, y: event.clientY };
 
             suppressNextContextMenu.current = true;
-            // Trigger a re-render
-            setForceRefresh(prev => prev + 1);
+            viewNeedsRegenRef.current = true;
+            requestInteractionPaintRef.current();
             return;
         }
 
@@ -2318,7 +2381,10 @@ const Canvas2D = ({
                     }
                 }
             });
-            setHoveredWall(newHoveredWall);
+            if (hoveredWallRef.current !== newHoveredWall) {
+                hoveredWallRef.current = newHoveredWall;
+                requestInteractionPaintRef.current();
+            }
             return;
         }
 
@@ -2329,33 +2395,43 @@ const Canvas2D = ({
                     const snappedPoint = snapSplitPoint(targetWall, x, y);
                     if (snappedPoint) {
                         const rounded = getRoundedPoint(snappedPoint);
-                        setSplitPreviewPoint(rounded);
-                        setSplitPreviewFace(Number.isFinite(snappedPoint.faceX)
+                        splitPreviewRef.current = rounded;
+                        splitFaceRef.current = Number.isFinite(snappedPoint.faceX)
                             ? { x: Number(snappedPoint.faceX.toFixed(3)), y: Number(snappedPoint.faceY.toFixed(3)) }
-                            : null);
-                        setSplitHoverDistance(getDistanceFromWallStart(targetWall, rounded));
+                            : null;
+                        const dist = Math.round(getDistanceFromWallStart(targetWall, rounded));
+                        splitDistanceRef.current = dist;
+                        setSplitHoverDistance((current) => (current === dist ? current : dist));
                     } else {
-                        setSplitPreviewPoint(null);
-                        setSplitPreviewFace(null);
+                        splitPreviewRef.current = null;
+                        splitFaceRef.current = null;
+                        splitDistanceRef.current = null;
                     }
                 }
             } else {
                 const closest = findClosestWallAtPoint(x, y);
                 if (closest) {
                     const rounded = getRoundedPoint(closest.point);
-                    setSplitPreviewPoint(rounded);
-                    setSplitPreviewFace(Number.isFinite(closest.point.faceX)
+                    splitPreviewRef.current = rounded;
+                    splitFaceRef.current = Number.isFinite(closest.point.faceX)
                         ? { x: Number(closest.point.faceX.toFixed(3)), y: Number(closest.point.faceY.toFixed(3)) }
-                        : null);
-                    setSplitHoverDistance(getDistanceFromWallStart(closest.wall, rounded));
-                    setHighlightWalls([{ id: closest.wall.id, color: getPlanWallHighlightColor('edit') }]);
+                        : null;
+                    const dist = Math.round(getDistanceFromWallStart(closest.wall, rounded));
+                    splitDistanceRef.current = dist;
+                    setSplitHoverDistance((current) => (current === dist ? current : dist));
+                    if (hoveredWallRef.current !== closest.wall.id) {
+                        hoveredWallRef.current = closest.wall.id;
+                        setHighlightWalls([{ id: closest.wall.id, color: getPlanWallHighlightColor('edit') }]);
+                    }
                 } else {
-                    setSplitPreviewPoint(null);
-                    setSplitPreviewFace(null);
-                    setSplitHoverDistance(null);
-                    setHighlightWalls([]);
+                    splitPreviewRef.current = null;
+                    splitFaceRef.current = null;
+                    splitDistanceRef.current = null;
+                    if (splitHoverDistance !== null) setSplitHoverDistance(null);
+                    if (highlightWalls.length) setHighlightWalls([]);
                 }
             }
+            requestInteractionPaintRef.current();
             return;
         }
 
@@ -2371,7 +2447,14 @@ const Canvas2D = ({
                 roomSelectionSnapPoints
             );
             const moved = Math.hypot(snapped.x - x, snapped.y - y) > 0.001;
-            setHoveredPoint(moved ? snapped : null);
+            const nextPoint = moved ? snapped : null;
+            const prevPoint = hoveredPointRef.current;
+            const samePoint = (!nextPoint && !prevPoint)
+                || (nextPoint && prevPoint && nextPoint.x === prevPoint.x && nextPoint.y === prevPoint.y);
+            if (!samePoint) {
+                hoveredPointRef.current = nextPoint;
+                requestInteractionPaintRef.current();
+            }
             return;
         }
 
@@ -2396,23 +2479,24 @@ const Canvas2D = ({
                 }
             });
         });
-        setHoveredPoint(closestPoint);
+        hoveredPointRef.current = closestPoint;
         let addWallMagnet = null;
-        if (currentMode === 'add-wall' && !tempWall?.placingSide) {
+        if (currentMode === 'add-wall' && !tempWallRef.current?.placingSide) {
             const magnetMm = MAGNET_PX / scaleFactor.current;
             let magnet = snapMagnetPoint(x, y, walls, intersections, magnetMm);
-            if (!magnet && isDrawing && tempWall) {
-                const held = snapMagnetPoint(tempWall.end_x, tempWall.end_y, walls, intersections, 1.5);
+            const drawingWall = tempWallRef.current;
+            if (!magnet && isDrawing && drawingWall) {
+                const held = snapMagnetPoint(drawingWall.end_x, drawingWall.end_y, walls, intersections, 1.5);
                 if (held && Math.hypot(x - held.x, y - held.y) <= magnetMm * 1.45) {
                     magnet = held;
                 }
             }
             addWallMagnet = magnet;
             const mark = magnet || bothLineSnapMarks(x, y, walls, (SNAP_THRESHOLD * 1.8) / scaleFactor.current);
-            setLineSnapMarks(mark);
-            if (mark) setHoveredPoint(mark);
+            lineSnapMarksRef.current = mark;
+            if (mark) hoveredPointRef.current = mark;
         } else {
-            setLineSnapMarks(null);
+            lineSnapMarksRef.current = null;
         }
         // Wall Hover Detection (use wall.id)
         if ([
@@ -2434,7 +2518,9 @@ const Canvas2D = ({
                     }
                 }
             });
-            setHoveredWall(newHoveredWall);
+            if (hoveredWallRef.current !== newHoveredWall) {
+                hoveredWallRef.current = newHoveredWall;
+            }
         }
         // Door Hover Detection (edit-door mode)
         if (currentMode === 'edit-door') {
@@ -2442,24 +2528,25 @@ const Canvas2D = ({
                 x, y, doors, walls, scaleFactor.current, offsetX.current, offsetY.current
             );
             setHoveredDoorId(hoveredDoor ? hoveredDoor.id : null);
-        } else {
+        } else if (hoveredDoorId) {
             setHoveredDoorId(null);
         }
         // --- Update tempWall while drawing (snapping logic) ---
-        if (isDrawing && tempWall && currentMode === 'add-wall') {
-            if (tempWall.placingSide) {
-                const refStart = { x: tempWall.anchor_x, y: tempWall.anchor_y };
-                const refEnd = { x: tempWall.ref_x, y: tempWall.ref_y };
-                const side = sideOfReferenceLine(refStart, refEnd, { x, y }, tempWall.offsetSide);
-                setTempWall({
-                    ...tempWall,
+        const drawingWall = tempWallRef.current;
+        if (isDrawing && drawingWall && currentMode === 'add-wall') {
+            if (drawingWall.placingSide) {
+                const refStart = { x: drawingWall.anchor_x, y: drawingWall.anchor_y };
+                const refEnd = { x: drawingWall.ref_x, y: drawingWall.ref_y };
+                const side = sideOfReferenceLine(refStart, refEnd, { x, y }, drawingWall.offsetSide);
+                previewTempWall({
+                    ...drawingWall,
                     offsetSide: side,
                     singleLine: false,
                 });
             } else {
                 const anchor = {
-                    x: tempWall.anchor_x ?? tempWall.start_x,
-                    y: tempWall.anchor_y ?? tempWall.start_y,
+                    x: drawingWall.anchor_x ?? drawingWall.start_x,
+                    y: drawingWall.anchor_y ?? drawingWall.start_y,
                 };
                 const typedLen = parseInt(typedLengthRef.current, 10);
                 const drawn = drawnWallFromLine(anchor, { x, y }, {
@@ -2469,8 +2556,8 @@ const Canvas2D = ({
                     typedLength: typedLen > 0 ? typedLen : 0,
                     magnetPoint: addWallMagnet,
                 });
-                setTempWall({
-                    ...tempWall,
+                previewTempWall({
+                    ...drawingWall,
                     anchor_x: anchor.x,
                     anchor_y: anchor.y,
                     ref_x: drawn.refEnd.x,
@@ -2479,14 +2566,16 @@ const Canvas2D = ({
                     start_y: drawn.refStart.y,
                     end_x: drawn.refEnd.x,
                     end_y: drawn.refEnd.y,
-                    thickness: tempWall.thickness ?? wallThickness,
+                    thickness: drawingWall.thickness ?? wallThickness,
                     angleSnapType: drawn.axis,
                     typedLength: typedLengthRef.current,
                     singleLine: true,
                     placingSide: false,
                 });
             }
+            return;
         }
+        requestInteractionPaintRef.current();
     };
 
     useEffect(() => {
@@ -2844,22 +2933,177 @@ const Canvas2D = ({
         };
     }, []);
 
+    const drawTransientOverlay = (context) => {
+        if (!context) return;
+        const dpr = window.devicePixelRatio || 1;
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
+        const scale = scaleFactor.current;
+        const ox = offsetX.current;
+        const oy = offsetY.current;
+        const preview = tempWallRef.current;
+        if (preview) {
+            drawTempWallPreview(
+                context,
+                preview,
+                scale,
+                ox,
+                oy,
+                hoveredPointRef.current,
+                initialScale.current
+            );
+        }
+        const hoverId = hoveredWallRef.current;
+        const hoverLines = hoverId == null ? null : (
+            wallLinesRef.current?.get(hoverId) || wallLinesRef.current?.get(String(hoverId))
+        );
+        if (hoverLines?.line1 && hoverLines?.line2) {
+            drawWallLinePair(context, [hoverLines.line1, hoverLines.line2], scale, ox, oy, '#2196F3');
+        }
+        const mark = lineSnapMarksRef.current;
+        if (mark) {
+            drawEndpoints(context, mark.x, mark.y, scale, ox, oy, mark, '#FF9800', 3.6, initialScale.current);
+        }
+        const point = hoveredPointRef.current;
+        if (point && (!mark || point.x !== mark.x || point.y !== mark.y)) {
+            drawEndpoints(context, point.x, point.y, scale, ox, oy, point, '#FF9800', 2.5, initialScale.current);
+        }
+
+        const splitPoint = splitPreviewRef.current;
+        if (currentMode === 'split-wall' && splitPoint) {
+            const marker = splitFaceRef.current || splitPoint;
+            const markerX = marker.x * scale + ox;
+            const markerY = marker.y * scale + oy;
+            context.save();
+            context.fillStyle = '#F97316';
+            context.strokeStyle = '#F97316';
+            context.lineWidth = 2;
+            context.beginPath();
+            context.arc(markerX, markerY, 6, 0, Math.PI * 2);
+            context.fill();
+            context.stroke();
+
+            const splitTargetWall = splitTargetWallId ? walls.find((w) => w.id === splitTargetWallId) : null;
+            const previewWall = splitTargetWall || (
+                highlightWalls.length === 1 ? walls.find((w) => w.id === highlightWalls[0].id) : null
+            );
+            if (previewWall && getWallLength(previewWall) > 0) {
+                const wallLength = getWallLength(previewWall);
+                const dirX = (previewWall.end_x - previewWall.start_x) / wallLength;
+                const dirY = (previewWall.end_y - previewWall.start_y) / wallLength;
+                const t = ((splitPoint.x - previewWall.start_x) * dirX
+                    + (splitPoint.y - previewWall.start_y) * dirY) / wallLength;
+                const faces = splitFaceLines(previewWall);
+                const facePoint = (line) => ({
+                    x: line[0].x + (line[1].x - line[0].x) * t,
+                    y: line[0].y + (line[1].y - line[0].y) * t,
+                });
+                const cutA = facePoint(faces[0]);
+                const cutB = faces[1] ? facePoint(faces[1]) : null;
+                let cutStart = cutA;
+                let cutEnd = cutB;
+                if (!cutEnd) {
+                    const perpX = -dirY;
+                    const perpY = dirX;
+                    const cutModelHalf = (28 / scale) / 2;
+                    cutStart = {
+                        x: splitPoint.x - perpX * cutModelHalf,
+                        y: splitPoint.y - perpY * cutModelHalf,
+                    };
+                    cutEnd = {
+                        x: splitPoint.x + perpX * cutModelHalf,
+                        y: splitPoint.y + perpY * cutModelHalf,
+                    };
+                } else {
+                    const span = Math.hypot(cutEnd.x - cutStart.x, cutEnd.y - cutStart.y) || 1;
+                    const ux = (cutEnd.x - cutStart.x) / span;
+                    const uy = (cutEnd.y - cutStart.y) / span;
+                    const extra = 8 / scale;
+                    cutStart = { x: cutStart.x - ux * extra, y: cutStart.y - uy * extra };
+                    cutEnd = { x: cutEnd.x + ux * extra, y: cutEnd.y + uy * extra };
+                }
+                context.beginPath();
+                context.moveTo(cutStart.x * scale + ox, cutStart.y * scale + oy);
+                context.lineTo(cutEnd.x * scale + ox, cutEnd.y * scale + oy);
+                context.stroke();
+                if (splitDistanceRef.current !== null) {
+                    context.fillStyle = '#1E293B';
+                    context.font = `${Math.max(12, 180 * scale)}px Arial`;
+                    context.textAlign = 'left';
+                    context.textBaseline = 'bottom';
+                    context.fillText(`${Math.round(splitDistanceRef.current)}`, markerX + 10, markerY - 8);
+                }
+            }
+            context.restore();
+        }
+    };
+
+    const paintInteraction = () => {
+        const canvas = canvasRef.current;
+        const snap = planSnapshotRef.current;
+        if (!canvas || !snap?.canvas) return false;
+        if (snap.cssWidth !== canvasSize.width || snap.cssHeight !== canvasSize.height) return false;
+        blitPlanSnapshot(canvas, snap, {
+            offsetX: offsetX.current,
+            offsetY: offsetY.current,
+            scale: scaleFactor.current,
+        });
+        drawTransientOverlay(canvas.getContext('2d'));
+        syncPlanHudTransform(planHudRef.current, labelViewRef.current, {
+            offsetX: offsetX.current,
+            offsetY: offsetY.current,
+            scale: scaleFactor.current,
+        });
+        return true;
+    };
+
+    const requestInteractionPaint = () => {
+        if (interactionPaintRafRef.current) return;
+        interactionPaintRafRef.current = requestAnimationFrame(() => {
+            interactionPaintRafRef.current = 0;
+            if (!paintInteraction()) {
+                setForceRefresh((tick) => tick + 1);
+            }
+        });
+    };
+
+    const settlePlanView = (immediate) => {
+        const run = () => {
+            settleTimerRef.current = null;
+            if (!viewNeedsRegenRef.current || isDraggingCanvas.current) return;
+            viewNeedsRegenRef.current = false;
+            if (planHudRef.current) planHudRef.current.style.transform = '';
+            setCurrentScaleFactor(scaleFactor.current);
+            setForceRefresh((tick) => tick + 1);
+        };
+        if (settleTimerRef.current) {
+            clearTimeout(settleTimerRef.current);
+            settleTimerRef.current = null;
+        }
+        if (immediate) run();
+        else settleTimerRef.current = setTimeout(run, 150);
+    };
+
+    requestInteractionPaintRef.current = requestInteractionPaint;
+    settleViewRef.current = settlePlanView;
+
     useLayoutEffect(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
         const context = canvas.getContext('2d');
+        if (planHudRef.current) planHudRef.current.style.transform = '';
         
-        // Handle high DPI displays to prevent blurriness
+        // Handle high DPI displays to prevent blurriness.
+        // Assigning canvas.width clears the bitmap, so do it only when the size changes.
         const dpr = window.devicePixelRatio || 1;
         const displayWidth = canvasSize.width;
         const displayHeight = canvasSize.height;
-        
-        // Set the internal size to the display size * device pixel ratio
-        canvas.width = displayWidth * dpr;
-        canvas.height = displayHeight * dpr;
-        
-        // Scale the context to match device pixel ratio
-        context.scale(dpr, dpr);
+        const backingWidth = Math.max(1, Math.round(displayWidth * dpr));
+        const backingHeight = Math.max(1, Math.round(displayHeight * dpr));
+        if (canvas.width !== backingWidth || canvas.height !== backingHeight) {
+            canvas.width = backingWidth;
+            canvas.height = backingHeight;
+        }
+        context.setTransform(dpr, 0, 0, dpr, 0, 0);
         
         // Keep CSS size at 100% of the viewport so a default 1000px buffer cannot
         // expand the layout and get clipped by overflow-x: hidden on phones.
@@ -2946,11 +3190,11 @@ const Canvas2D = ({
             highlightWalls: effectiveHighlightWalls,
             selectedWallsForRoom,
             selectedWall,
-            hoveredWall,
+            hoveredWall: null,
             isEditingMode,
             joints,
             intersections,
-            tempWall,
+            tempWall: null,
             snapToClosestPoint,
             scaleFactor: scaleFactor.current,
             offsetX: offsetX.current,
@@ -2959,12 +3203,13 @@ const Canvas2D = ({
             currentScaleFactor,
             SNAP_THRESHOLD,
             drawPartitionSlashes,
-            hoveredPoint,
-            lineSnapMarks,
-            drawWallLinePair,
-            drawWallCaps,
-            drawEndpoints,
-            drawDimensions,
+            hoveredPoint: null,
+            lineSnapMarks: null,
+  drawWallLinePair,
+  drawWallCaps,
+  drawEndpoints,
+  drawDimensions,
+  drawTempWallPreview,
             // Add these:
             wallPanelsMap,
             drawPanelDivisions,
@@ -2983,6 +3228,7 @@ const Canvas2D = ({
         const colorMap = wallDrawResult?.thicknessColorMap ?? wallDrawResult;
         const dimensionEdgeExtents = wallDrawResult?.dimensionEdgeExtents ?? null;
         const wallLinesMap = wallDrawResult?.wallLinesMap ?? null;
+        wallLinesRef.current = wallLinesMap;
         // Update legend only when entries change (avoids extra paint after theme redraw)
         if (colorMap instanceof Map) {
             const prev = thicknessColorMapRef.current;
@@ -3155,7 +3401,7 @@ const Canvas2D = ({
                     scaleFactor.current,
                     offsetX.current,
                     offsetY.current,
-                    hoveredPoint,
+                    null,
                     '#FF9800',
                     2.25,
                     initialScale.current
@@ -3163,87 +3409,26 @@ const Canvas2D = ({
             });
         }
         
-        const previewWall =
-            splitTargetWall ||
-            (highlightWalls.length === 1
-                ? walls.find((w) => w.id === highlightWalls[0].id)
-                : null);
-
-        if (currentMode === 'split-wall' && splitPreviewPoint) {
-            const marker = splitPreviewFace || splitPreviewPoint;
-            const markerX = marker.x * scaleFactor.current + offsetX.current;
-            const markerY = marker.y * scaleFactor.current + offsetY.current;
-            context.save();
-            context.fillStyle = '#F97316';
-            context.strokeStyle = '#F97316';
-            context.lineWidth = 2;
-            context.beginPath();
-            context.arc(markerX, markerY, 6, 0, Math.PI * 2);
-            context.fill();
-            context.stroke();
-
-            if (previewWall && getWallLength(previewWall) > 0) {
-                const wallLength = getWallLength(previewWall);
-                const dirX = (previewWall.end_x - previewWall.start_x) / wallLength;
-                const dirY = (previewWall.end_y - previewWall.start_y) / wallLength;
-                const t = ((splitPreviewPoint.x - previewWall.start_x) * dirX
-                    + (splitPreviewPoint.y - previewWall.start_y) * dirY) / wallLength;
-                const faces = splitFaceLines(previewWall);
-                const facePoint = (line) => ({
-                    x: line[0].x + (line[1].x - line[0].x) * t,
-                    y: line[0].y + (line[1].y - line[0].y) * t,
-                });
-                const cutA = facePoint(faces[0]);
-                const cutB = faces[1] ? facePoint(faces[1]) : null;
-                let cutStart = cutA;
-                let cutEnd = cutB;
-                if (!cutEnd) {
-                    const perpX = -dirY;
-                    const perpY = dirX;
-                    const cutModelHalf = (28 / scaleFactor.current) / 2;
-                    cutStart = {
-                        x: splitPreviewPoint.x - perpX * cutModelHalf,
-                        y: splitPreviewPoint.y - perpY * cutModelHalf,
-                    };
-                    cutEnd = {
-                        x: splitPreviewPoint.x + perpX * cutModelHalf,
-                        y: splitPreviewPoint.y + perpY * cutModelHalf,
-                    };
-                } else {
-                    const span = Math.hypot(cutEnd.x - cutStart.x, cutEnd.y - cutStart.y) || 1;
-                    const ux = (cutEnd.x - cutStart.x) / span;
-                    const uy = (cutEnd.y - cutStart.y) / span;
-                    const extra = 8 / scaleFactor.current;
-                    cutStart = { x: cutStart.x - ux * extra, y: cutStart.y - uy * extra };
-                    cutEnd = { x: cutEnd.x + ux * extra, y: cutEnd.y + uy * extra };
-                }
-
-                context.beginPath();
-                context.moveTo(
-                    cutStart.x * scaleFactor.current + offsetX.current,
-                    cutStart.y * scaleFactor.current + offsetY.current
-                );
-                context.lineTo(
-                    cutEnd.x * scaleFactor.current + offsetX.current,
-                    cutEnd.y * scaleFactor.current + offsetY.current
-                );
-                context.stroke();
-
-                if (splitHoverDistance !== null) {
-                    context.fillStyle = '#1E293B';
-                    context.font = `${Math.max(12, 180 * scaleFactor.current)}px Arial`;
-                    context.textAlign = 'left';
-                    context.textBaseline = 'bottom';
-                    context.fillText(
-                        `${Math.round(splitHoverDistance)}`,
-                        markerX + 10,
-                        markerY - 8
-                    );
-                }
-            }
-
-            context.restore();
+        let snapCanvas = planSnapshotRef.current?.canvas;
+        if (!snapCanvas || snapCanvas.width !== canvas.width || snapCanvas.height !== canvas.height) {
+            snapCanvas = document.createElement('canvas');
+            snapCanvas.width = canvas.width;
+            snapCanvas.height = canvas.height;
         }
+        const snapContext = snapCanvas.getContext('2d');
+        snapContext.setTransform(1, 0, 0, 1, 0, 0);
+        snapContext.clearRect(0, 0, snapCanvas.width, snapCanvas.height);
+        snapContext.drawImage(canvas, 0, 0);
+        planSnapshotRef.current = {
+            canvas: snapCanvas,
+            offsetX: offsetX.current,
+            offsetY: offsetY.current,
+            scale: scaleFactor.current,
+            cssWidth: displayWidth,
+            cssHeight: displayHeight,
+            dpr,
+        };
+        drawTransientOverlay(context);
 
     // Canvas draw helpers are recreated each render; listed deps drive redraw.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -3542,7 +3727,7 @@ const Canvas2D = ({
         setTypedWallLength('');
         setIsDrawing(true);
         tempWallRef.current = locked;
-        setTempWall(locked);
+        commitTempWall(locked);
     };
 
     const renderManualSplitPanel = () => {
@@ -3619,6 +3804,12 @@ const Canvas2D = ({
         );
     };
     
+    labelViewRef.current = {
+        offsetX: offsetX.current,
+        offsetY: offsetY.current,
+        scale: scaleFactor.current,
+    };
+
     return (
         <>
             {/* Database Connection Error Message */}
@@ -3810,6 +4001,7 @@ const Canvas2D = ({
                                         }}
                                     />
 
+                                    <div ref={planHudRef} className="absolute inset-0 z-[30] pointer-events-none">
                                     {planNotePlacementRef.current && (() => {
                                         void placementPreviewTick;
                                         const previewRect = getPlanNotePlacementRect(
@@ -3876,6 +4068,7 @@ const Canvas2D = ({
                                             onInteractionStart={cancelPlanNotePlacement}
                                         />
                                     ))}
+                                    </div>
                                 </div>
                                 <PlanCanvasZoomControls
                                     onZoomIn={handleZoomIn}

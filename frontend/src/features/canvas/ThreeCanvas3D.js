@@ -343,7 +343,8 @@ export default class ThreeCanvas3D {
   
     // Setup responsive resize handling
     this.setupResizeHandlers();
-  
+
+    this._renderRequested = true;
     this.animate();
   }
 
@@ -364,6 +365,7 @@ export default class ThreeCanvas3D {
     syncLineMaterialResolution(width, height, this.renderer.getPixelRatio());
     resizePresentationPostFx(this, width, height);
     this.tourRoomLabels?.syncRendererSize();
+    this._renderRequested = true;
 
     debugLog(`📱 Resize: ${width}x${height} (aspect: ${this.camera.aspect.toFixed(2)})`);
   }
@@ -670,6 +672,7 @@ animateToExteriorView() {
 setCeilingsVisible(visible) {
     if (this.animationManager?.setCeilingPresented) {
         this.animationManager.setCeilingPresented(visible);
+        this._renderRequested = true;
         return;
     }
     this.scene.traverse((child) => {
@@ -684,6 +687,7 @@ setCeilingsVisible(visible) {
     this.ceilingPanelLines.forEach((line) => {
         line.visible = showLines;
     });
+    this._renderRequested = true;
 }
 
 getModelBounds() {
@@ -706,9 +710,11 @@ getModelBounds() {
   }
 
   calculateModelCenter() {
+    if (this._modelCenterCache) return this._modelCenterCache;
+    let center;
     if (this.project && this.project.width && this.project.length) {
       // Match 2D logic: center is at (width/2, length/2)
-      return { x: this.project.width / 2 * this.scalingFactor, z: this.project.length / 2 * this.scalingFactor };
+      center = { x: this.project.width / 2 * this.scalingFactor, z: this.project.length / 2 * this.scalingFactor };
     } else {
       let sumX = 0, sumZ = 0, count = 0;
       const scale = this.scalingFactor;
@@ -721,11 +727,13 @@ getModelBounds() {
         sumZ += wall.end_y * scale + offsetZ;
         count += 2;
       });
-      return { x: sumX / count, z: sumZ / count };
+      center = { x: sumX / count, z: sumZ / count };
     }
+    this._modelCenterCache = center;
+    return center;
   }  
 
-  // Animation loop
+  // Draw only while the camera, a door, or the tour is moving.
   animate() {
     if (this._disposed) {
       return;
@@ -734,13 +742,25 @@ getModelBounds() {
     if (!this.renderer || !this.scene || !this.camera) {
       return;
     }
+    let cameraMoved = false;
     if (this._viewTransitionActive) {
-      // The interior/exterior crane owns the camera until it settles.
+      cameraMoved = true;
     } else if (this.roomTourController?.isWalking?.()) {
       this.roomTourController.update();
+      cameraMoved = true;
     } else if (this.controls) {
-      this.controls.update();
+      cameraMoved = this.controls.update() === true;
     }
+    const tweening = typeof window !== 'undefined' && window.gsap?.globalTimeline?.isActive?.();
+    const busy = cameraMoved
+      || this._viewTransitionActive
+      || this.isTourEngaged()
+      || tweening
+      || this._renderRequested;
+    if (!busy) {
+      return;
+    }
+    this._renderRequested = false;
     renderPresentationPostFx(this);
 
     if (this.isTourEngaged()) {
@@ -793,6 +813,7 @@ getModelBounds() {
 
   // Method to update data and rebuild model
   updateData(walls, joints, doors, project = null) {
+    this._modelCenterCache = null;
     this.walls = walls;
     this.joints = joints;
     this.doors = doors;
@@ -828,6 +849,8 @@ getModelBounds() {
 
   // Method to rebuild the model
   buildModel() {
+    this._modelCenterCache = null;
+    this._renderRequested = true;
     try {
       // Properly dispose of old geometries and materials before removing objects
       this.scene.traverse((object) => {
@@ -974,7 +997,7 @@ getModelBounds() {
       // CRITICAL: Only create ceiling if there are declared rooms
       // Do not create ceiling based on wall endpoints alone
       if (!this.project || !this.project.rooms || this.project.rooms.length === 0) {
-        console.log('No rooms declared - skipping ceiling creation');
+        debugLog('No rooms declared - skipping ceiling creation');
         return;
       }
 
@@ -984,7 +1007,7 @@ getModelBounds() {
       );
 
       if (validRooms.length === 0) {
-        console.log('No rooms with valid room_points - skipping ceiling creation');
+        debugLog('No rooms with valid room_points - skipping ceiling creation');
         return;
       }
 
@@ -1519,7 +1542,7 @@ getModelBounds() {
       if (this.project && this.project.rooms && this.project.rooms.length > 0) {
         this.createRoomSpecificCeilings();
       } else {
-        console.log('No rooms found - skipping ceiling creation (ceilings are room-based)');
+        debugLog('No rooms found - skipping ceiling creation (ceilings are room-based)');
       }
     } catch (error) {
       console.error('Error creating room-specific ceilings:', error);
@@ -1947,7 +1970,7 @@ getModelBounds() {
         const wallHeight = wallAtPoint ? (wallAtPoint.height || roomHeight || 0) : (roomHeight || 0);
         const pointKey = `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
         pointHeightMap.set(pointKey, wallHeight);
-        console.log(`[Ceiling] Room ${room.id} point ${index} (${point.x}, ${point.y}): wall ${wallAtPoint?.id || 'none'} height = ${wallHeight}mm`);
+        debugLog(`[Ceiling] Room ${room.id} point ${index} (${point.x}, ${point.y}): wall ${wallAtPoint?.id || 'none'} height = ${wallHeight}mm`);
       });
       
       // Convert vertices to format required by earcut
@@ -1966,13 +1989,13 @@ getModelBounds() {
       // CRITICAL: Use room height as the reference, not wall heights
       // The ceiling should be generated at room.height, not the tallest wall height
       const ceilingReferenceHeight = roomHeight || 0;
-      console.log(`[Ceiling] Room ${room.id} using room height: ${ceilingReferenceHeight}mm (not wall heights)`);
+      debugLog(`[Ceiling] Room ${room.id} using room height: ${ceilingReferenceHeight}mm (not wall heights)`);
       
       // CRITICAL: Check if variable wall heights are allowed
       // If allow_variable_wall_heights is False, ceiling must be flat at room height
       // If True, ceiling can slope based on wall heights, but still uses room height as base reference
       const allowVariableHeights = room.allow_variable_wall_heights || false;
-      console.log(`[Ceiling] Room ${room.id} allow_variable_wall_heights: ${allowVariableHeights}`);
+      debugLog(`[Ceiling] Room ${room.id} allow_variable_wall_heights: ${allowVariableHeights}`);
       
       // Create a function to get height at any 3D vertex
       const getHeightAtVertex = (x, z) => {
@@ -2973,7 +2996,7 @@ getModelBounds() {
           
           // Debug: Verify normal direction for problematic walls
           if (wall.id === 7083 || wall.id === 7180 || wall.id === 7197) {
-            console.log(`[Panel Line Debug] Wall ${wall.id} - Normal and line positions:`, {
+            debugLog(`[Panel Line Debug] Wall ${wall.id} - Normal and line positions:`, {
               wallId: wall.id,
               normal: { x: finalNormX, z: finalNormZ },
               wallThickness: wallThickness,
@@ -3159,6 +3182,7 @@ getModelBounds() {
         line.visible = this.showPanelLines;
       });
     }
+    this._renderRequested = true;
   }
 
   // Method to toggle ceiling panel division lines visibility
@@ -3198,6 +3222,7 @@ getModelBounds() {
         line.visible = false;
       });
     }
+    this._renderRequested = true;
   }
 
   // Method to toggle both wall and ceiling panel lines together
@@ -3240,6 +3265,7 @@ getModelBounds() {
         line.visible = false;
       });
     }
+    this._renderRequested = true;
   }
 
   // Method to set both wall and ceiling panel lines visibility
@@ -3272,6 +3298,7 @@ getModelBounds() {
         line.visible = false;
       });
     }
+    this._renderRequested = true;
   }
 
   // Method to create line segments with gaps at door cutouts
@@ -3423,6 +3450,7 @@ getModelBounds() {
         line.visible = visible;
       });
     }
+    this._renderRequested = true;
   }
 
   clipPolygonByRect(polyPoints, minX, minZ, maxX, maxZ) {
@@ -4336,7 +4364,7 @@ getModelBounds() {
   // Selective shrinking: Only shrink vertices that are OUTSIDE the wall inner faces
   // This prevents gaps while avoiding overlap
   shrinkPolygonSelectivelyByInnerFace(vertices, room, wallThickness) {
-    console.log(`[Floor Shrink] shrinkPolygonSelectivelyByInnerFace called for room ${room?.id}`, {
+    debugLog(`[Floor Shrink] shrinkPolygonSelectivelyByInnerFace called for room ${room?.id}`, {
       verticesCount: vertices?.length,
       hasRoom: !!room,
       hasWalls: !!this.walls,
@@ -4346,7 +4374,7 @@ getModelBounds() {
     });
 
     if (!vertices || vertices.length < 3 || !room || !this.walls || !this.joints) {
-      console.log(`[Floor Shrink] Fallback to standard shrink - missing data`);
+      debugLog(`[Floor Shrink] Fallback to standard shrink - missing data`);
       // Fallback to standard shrink if we can't analyze
       return this.shrinkPolygonByWallThickness(vertices, wallThickness);
     }
@@ -4356,14 +4384,14 @@ getModelBounds() {
       ? room.walls.map(w => String(typeof w === 'object' ? w.id : w))
       : [];
     
-    console.log(`[Floor Shrink] Room ${room.id} wall IDs (as strings):`, roomWallIds);
-    console.log(`[Floor Shrink] Available walls:`, this.walls.map(w => ({ id: w.id, idType: typeof w.id, idString: String(w.id) })));
+    debugLog(`[Floor Shrink] Room ${room.id} wall IDs (as strings):`, roomWallIds);
+    debugLog(`[Floor Shrink] Available walls:`, this.walls.map(w => ({ id: w.id, idType: typeof w.id, idString: String(w.id) })));
     
     const roomWalls = this.walls.filter(wall => 
       roomWallIds.includes(String(wall.id))
     );
 
-    console.log(`[Floor Shrink] Found ${roomWalls.length} walls for room ${room.id}:`, roomWalls.map(w => ({ id: w.id, start: `${w.start_x},${w.start_y}`, end: `${w.end_x},${w.end_y}` })));
+    debugLog(`[Floor Shrink] Found ${roomWalls.length} walls for room ${room.id}:`, roomWalls.map(w => ({ id: w.id, start: `${w.start_x},${w.start_y}`, end: `${w.end_x},${w.end_y}` })));
 
     if (roomWalls.length === 0) {
       console.error(`[Floor Shrink] ERROR: No walls matched!`, {
@@ -4372,7 +4400,7 @@ getModelBounds() {
         roomWallsData: room.walls,
         firstWallId: this.walls[0] ? { id: this.walls[0].id, idType: typeof this.walls[0].id } : 'no walls'
       });
-      console.log(`[Floor Shrink] No walls found, using standard shrink`);
+      debugLog(`[Floor Shrink] No walls found, using standard shrink`);
       // No walls, use standard shrink
       return this.shrinkPolygonByWallThickness(vertices, wallThickness);
     }
@@ -4402,9 +4430,9 @@ getModelBounds() {
     };
 
     // Calculate extended inner face for each room wall (same logic as createWallMesh)
-    console.log(`[Floor Shrink] Calculating inner faces for ${roomWalls.length} walls`);
+    debugLog(`[Floor Shrink] Calculating inner faces for ${roomWalls.length} walls`);
     const wallInnerFaces = roomWalls.map(wall => {
-      console.log(`[Floor Shrink] Processing wall ${wall.id}`);
+      debugLog(`[Floor Shrink] Processing wall ${wall.id}`);
       let startX = snap(wall.start_x * scale);
       let startZ = snap(wall.start_y * scale);
       let endX = snap(wall.end_x * scale);
@@ -4704,7 +4732,7 @@ getModelBounds() {
           const wallY = finalStartZ;
           const centerY = modelCenter.z * scale;
           const normalYComponent = finalNormZ;
-          console.log(`[Normal Debug] Wall ${wall.id} normal calculation:`, {
+          debugLog(`[Normal Debug] Wall ${wall.id} normal calculation:`, {
             wallDir: { x: ux, z: uz },
             normalBeforeFlip: { x: -uz, z: ux },
             toCenter: { x: toCenterX, z: toCenterZ },
@@ -4763,7 +4791,7 @@ getModelBounds() {
 
       // Debug logging for Wall 7255
       if (wall.id === 7255) {
-        console.log(`[Floor Shrink Debug] Wall ${wall.id} (7255) - Inner Face Calculation:`, {
+        debugLog(`[Floor Shrink Debug] Wall ${wall.id} (7255) - Inner Face Calculation:`, {
           originalStart: { x: startX, z: startZ },
           originalEnd: { x: endX, z: endZ },
           beforeExtension: { startX: originalFinalStartX, startZ: originalFinalStartZ, endX: originalFinalEndX, endZ: originalFinalEndZ },
@@ -4953,7 +4981,7 @@ getModelBounds() {
         
         // Debug logging for first few vertices
         if (vertexIndex < 3) {
-          console.log(`[Floor Shrink] Vertex ${vertexIndex}:`, {
+          debugLog(`[Floor Shrink] Vertex ${vertexIndex}:`, {
             vertex: { x: vertex.x, z: vertex.z },
             closestWall: closestWallFace.wallId,
             closestOnFace: closestPointOnFace,
