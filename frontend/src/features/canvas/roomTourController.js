@@ -11,7 +11,6 @@ import {
   isInDoorMovementZone,
   isPointInClosedDoorVolume,
   openingMatchesWall,
-  shouldSkipCollinearWall,
 } from './tourWallCollision';
 import TourMobileControls, { shouldUseTourMobileControls } from './tourMobileControls';
 import { isDoorOpen, toggleDoorContainer } from './doorInteraction';
@@ -40,6 +39,8 @@ const TOUR = {
   // drawing every door through the walls is what makes the tour stall.
   DOOR_DRAW_SHOW_MM: 45000,
   DOOR_DRAW_HIDE_MM: 60000,
+  // Walking only needs the hall in front of you. The orbit view keeps its own far plane.
+  TOUR_VIEW_DISTANCE_MM: 90000,
 };
 
 function clamp(value, min, max) {
@@ -64,7 +65,6 @@ export default class RoomTourController {
     this.fov = TOUR.FOV_DEFAULT;
     this.playerRadius = TOUR.PLAYER_RADIUS_MM * instance.scalingFactor;
     this.eyeHeight = TOUR.EYE_HEIGHT_MM * instance.scalingFactor;
-    this.insideBuilding = false;
     this.hud = null;
     this.lastFrameTime = performance.now();
     this.pointerLocked = false;
@@ -83,8 +83,12 @@ export default class RoomTourController {
     this.facingDoor = null;
     this.doorPrompt = null;
     this.doorLookRaycaster = new THREE.Raycaster();
+    this._lookOrigin = new THREE.Vector3();
+    this._lookDirection = new THREE.Vector3();
     this._doorPromptWorld = new THREE.Vector3();
     this._doorPromptBox = new THREE.Box3();
+    this.exteriorWalls = new WeakMap();
+    this.savedCameraFar = null;
   }
 
   isPlacing() {
@@ -196,22 +200,27 @@ export default class RoomTourController {
   }
 
   isExteriorWall(wall) {
-    if (!this.floorZones.length) {
-      return true;
+    if (this.exteriorWalls.has(wall)) {
+      return this.exteriorWalls.get(wall);
     }
-    const scale = this.instance.scalingFactor;
-    const offset = this.instance.modelOffset || { x: 0, z: 0 };
-    const midX = ((wall.start_x + wall.end_x) / 2) * scale + offset.x;
-    const midZ = ((wall.start_y + wall.end_y) / 2) * scale + offset.z;
-    const nx = -(wall.end_y - wall.start_y);
-    const nz = wall.end_x - wall.start_x;
-    const len = Math.hypot(nx, nz) || 1;
-    const off = TOUR.WALL_SAMPLE_OFFSET_MM * scale;
-    const side1 = { x: midX + (nx / len) * off, y: midZ + (nz / len) * off };
-    const side2 = { x: midX - (nx / len) * off, y: midZ - (nz / len) * off };
-    const in1 = this.floorZones.some((zone) => isPointInPolygon(side1, zone.polygon));
-    const in2 = this.floorZones.some((zone) => isPointInPolygon(side2, zone.polygon));
-    return !(in1 && in2);
+    let exterior = true;
+    if (this.floorZones.length) {
+      const scale = this.instance.scalingFactor;
+      const offset = this.instance.modelOffset || { x: 0, z: 0 };
+      const midX = ((wall.start_x + wall.end_x) / 2) * scale + offset.x;
+      const midZ = ((wall.start_y + wall.end_y) / 2) * scale + offset.z;
+      const nx = -(wall.end_y - wall.start_y);
+      const nz = wall.end_x - wall.start_x;
+      const len = Math.hypot(nx, nz) || 1;
+      const off = TOUR.WALL_SAMPLE_OFFSET_MM * scale;
+      const side1 = { x: midX + (nx / len) * off, y: midZ + (nz / len) * off };
+      const side2 = { x: midX - (nx / len) * off, y: midZ - (nz / len) * off };
+      const in1 = this.floorZones.some((zone) => isPointInPolygon(side1, zone.polygon));
+      const in2 = this.floorZones.some((zone) => isPointInPolygon(side2, zone.polygon));
+      exterior = !(in1 && in2);
+    }
+    this.exteriorWalls.set(wall, exterior);
+    return exterior;
   }
 
   isFlying() {
@@ -282,10 +291,6 @@ export default class RoomTourController {
 
     for (const wall of this.instance.walls || []) {
       if (!this.wallIntersectsPlayerBody(wall)) {
-        continue;
-      }
-
-      if (shouldSkipCollinearWall(this.doorOpenings, this.instance, wall, x, z)) {
         continue;
       }
 
@@ -538,21 +543,6 @@ export default class RoomTourController {
     }
   }
 
-  updateInteriorFeel() {
-    const inDoor = isPointInDoorPassage(this.doorOpenings, this.player.x, this.player.z, this.instance);
-    const eyeReferenceY = this.player.y + this.eyeHeight * 0.35;
-    const inside = this.findFloorZoneAt(this.player.x, this.player.z, eyeReferenceY) != null;
-    // Only hide ceiling once clearly inside — not while still in the door corridor.
-    const shouldFeelInside = inside && !inDoor;
-    if (shouldFeelInside === this.insideBuilding) {
-      return;
-    }
-    this.insideBuilding = shouldFeelInside;
-    if (typeof this.instance.setCeilingsVisible === 'function') {
-      this.instance.setCeilingsVisible(!shouldFeelInside);
-    }
-  }
-
   hudMessage(pointerLocked) {
     if (shouldUseTourMobileControls()) {
       return '<strong>Tour</strong> — Left stick move (always run) · Right side look · FULL screen · Tap Open/Close door';
@@ -597,22 +587,27 @@ export default class RoomTourController {
     const maxDist = TOUR.DOOR_INTERACT_MAX_DIST_MM * instance.scalingFactor;
     const eyeY = this.player.y + this.eyeHeight;
     const cosPitch = Math.cos(this.pitch);
-    const direction = new THREE.Vector3(
+    const direction = this._lookDirection;
+    direction.set(
       Math.sin(this.yaw) * cosPitch,
       Math.sin(this.pitch),
       Math.cos(this.yaw) * cosPitch
     ).normalize();
-    const origin = new THREE.Vector3(this.player.x, eyeY, this.player.z);
+    const origin = this._lookOrigin.set(this.player.x, eyeY, this.player.z);
+    const reach = maxDist + 6;
+    const reachSq = reach * reach;
 
     const panelMeshes = [];
-    doors.forEach((door) => {
-      if (!door.visible) return;
+    for (let i = 0; i < doors.length; i += 1) {
+      const door = doors[i];
+      if (!door.visible) continue;
+      const dx = door.position.x - this.player.x;
+      const dz = door.position.z - this.player.z;
+      if (dx * dx + dz * dz > reachSq) continue;
       door.traverse((child) => {
-        if (child.isMesh && child.visible) {
-          panelMeshes.push(child);
-        }
+        if (child.isMesh && child.visible) panelMeshes.push(child);
       });
-    });
+    }
 
     if (panelMeshes.length) {
       this.doorLookRaycaster.set(origin, direction);
@@ -897,10 +892,15 @@ export default class RoomTourController {
   }
 
   prepareTourEnvironment() {
+    this.exteriorWalls = new WeakMap();
     this.buildFloorZones();
     this.buildDoorOpenings();
     this.defaultGroundY = this.computeDefaultGroundY();
     this.playBounds = this.computePlayBounds();
+    const walls = this.instance.walls || [];
+    for (let i = 0; i < walls.length; i += 1) {
+      this.isExteriorWall(walls[i]);
+    }
   }
 
   beginWalkingFromPendingSpawn() {
@@ -920,10 +920,13 @@ export default class RoomTourController {
     this.yaw = Math.atan2(lookDir.x, lookDir.z);
     this.pitch = 0;
     this.fov = TOUR.FOV_DEFAULT;
-    this.insideBuilding = false;
     this.lastFrameTime = performance.now();
     this.active = true;
     this.savedCameraFov = this.instance.camera.fov;
+    this.savedCameraFar = this.instance.camera.far;
+    const tourFar = TOUR.TOUR_VIEW_DISTANCE_MM * (this.instance.scalingFactor || 0.01);
+    this.instance.camera.far = Math.max(tourFar, 80);
+    this.instance.camera.updateProjectionMatrix();
 
     if (this.instance.controls) {
       this.savedControlsEnabled = this.instance.controls.enabled;
@@ -940,7 +943,9 @@ export default class RoomTourController {
     if (this.hud) {
       this.hud.innerHTML = this.hudMessage(false);
     }
-    this.updateInteriorFeel();
+    if (typeof this.instance.setCeilingsVisible === 'function') {
+      this.instance.setCeilingsVisible(true);
+    }
     this.updateCamera();
     return true;
   }
@@ -1199,6 +1204,10 @@ export default class RoomTourController {
     }
 
     this.instance.camera.fov = this.savedCameraFov;
+    if (this.savedCameraFar != null) {
+      this.instance.camera.far = this.savedCameraFar;
+      this.savedCameraFar = null;
+    }
     this.instance.camera.updateProjectionMatrix();
 
     if (this.instance.controls) {
@@ -1306,7 +1315,6 @@ export default class RoomTourController {
       }
       this.clampVerticalPosition();
     }
-    this.updateInteriorFeel();
     this.updateDoorPrompt();
     this.updateCamera();
   }

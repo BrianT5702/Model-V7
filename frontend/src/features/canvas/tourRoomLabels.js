@@ -8,6 +8,40 @@ const LABEL_SHOW_MIN_MM = 1200;
 const LABEL_SHOW_MAX_MM = 42000;
 const STOREY_SAME_FLOOR_TOLERANCE_MM = 2800;
 const OCCLUSION_MARGIN_MM = 150;
+
+function viewCrossesWall(px, pz, lx, lz, vx, vz, vLen2, wall) {
+  const { ax, az, bx, bz, half } = wall;
+  const minX = Math.min(px, lx) - half;
+  const maxX = Math.max(px, lx) + half;
+  const minZ = Math.min(pz, lz) - half;
+  const maxZ = Math.max(pz, lz) + half;
+  if (Math.max(ax, bx) < minX || Math.min(ax, bx) > maxX) return false;
+  if (Math.max(az, bz) < minZ || Math.min(az, bz) > maxZ) return false;
+
+  const wx = bx - ax;
+  const wz = bz - az;
+  const wLen2 = wx * wx + wz * wz;
+  if (wLen2 < 1e-8) return false;
+  const b = vx * wx + vz * wz;
+  const d = vx * (px - ax) + vz * (pz - az);
+  const e = wx * (px - ax) + wz * (pz - az);
+  const denom = vLen2 * wLen2 - b * b;
+  let s;
+  let t;
+  if (denom < 1e-6) {
+    s = 0;
+    t = e / wLen2;
+  } else {
+    s = (b * e - wLen2 * d) / denom;
+    t = (vLen2 * e - b * d) / denom;
+  }
+  if (s < 0.08 || s > 0.92) return false;
+  t = Math.max(0, Math.min(1, t));
+  const dx = px + s * vx - (ax + t * wx);
+  const dz = pz + s * vz - (az + t * wz);
+  return dx * dx + dz * dz <= half * half;
+}
+
 /** 3D tour labels always sit at the room polygon center (independent of 2D label drag position). */
 function resolveRoomCenterPosition(room, scale, offset) {
   if (!room.room_points || room.room_points.length < 3) {
@@ -30,11 +64,7 @@ export default class TourRoomLabelManager {
     this.instance = instance;
     this.active = false;
     this.labelObjects = [];
-    this.wallMeshes = null;
-    this.raycaster = new THREE.Raycaster();
     this._rayOrigin = new THREE.Vector3();
-    this._rayTarget = new THREE.Vector3();
-    this._rayDirection = new THREE.Vector3();
     this.labelRenderer = new CSS2DRenderer();
     this.labelRenderer.domElement.className = 'tour-room-label-layer';
     this.labelRenderer.domElement.style.pointerEvents = 'none';
@@ -51,7 +81,7 @@ export default class TourRoomLabelManager {
 
   rebuild() {
     this.clear();
-    this.wallMeshes = null;
+    this.wallSegments = null;
     const rooms = this.instance.project?.rooms || [];
     const scale = this.instance.scalingFactor;
     const offset = this.instance.modelOffset || { x: 0, z: 0 };
@@ -96,40 +126,40 @@ export default class TourRoomLabelManager {
     });
   }
 
-  getWallMeshes() {
-    if (!this.wallMeshes) {
-      this.wallMeshes = [];
-      this.instance.scene.traverse((object) => {
-        if (object.isMesh && object.userData?.isWall && object.visible) {
-          this.wallMeshes.push(object);
-        }
-      });
-    }
-    return this.wallMeshes;
+  getWallSegments() {
+    if (this.wallSegments) return this.wallSegments;
+    const scale = this.instance.scalingFactor || 0.01;
+    const offset = this.instance.modelOffset || { x: 0, z: 0 };
+    const margin = OCCLUSION_MARGIN_MM * scale;
+    this.wallSegments = (this.instance.walls || []).map((wall) => {
+      const half = ((Number(wall.thickness) || 200) * scale) * 0.5 + margin;
+      return {
+        ax: wall.start_x * scale + offset.x,
+        az: wall.start_y * scale + offset.z,
+        bx: wall.end_x * scale + offset.x,
+        bz: wall.end_y * scale + offset.z,
+        half,
+      };
+    });
+    return this.wallSegments;
   }
 
   isLabelOccludedByWall(label) {
-    const walls = this.getWallMeshes();
-    if (!walls.length) {
-      return false;
+    const walls = this.getWallSegments();
+    if (!walls.length) return false;
+    const px = this._rayOrigin.x;
+    const pz = this._rayOrigin.z;
+    const lx = label.position.x;
+    const lz = label.position.z;
+    const vx = lx - px;
+    const vz = lz - pz;
+    const vLen2 = vx * vx + vz * vz;
+    if (vLen2 < 1e-4) return false;
+    for (let i = 0; i < walls.length; i += 1) {
+      const wall = walls[i];
+      if (viewCrossesWall(px, pz, lx, lz, vx, vz, vLen2, wall)) return true;
     }
-
-    const camera = this.instance.camera;
-    label.getWorldPosition(this._rayTarget);
-    this._rayOrigin.copy(camera.position);
-
-    const distToLabel = this._rayOrigin.distanceTo(this._rayTarget);
-    if (distToLabel < 1e-6) {
-      return false;
-    }
-
-    this._rayDirection.copy(this._rayTarget).sub(this._rayOrigin).normalize();
-    const margin = OCCLUSION_MARGIN_MM * this.instance.scalingFactor;
-    this.raycaster.set(this._rayOrigin, this._rayDirection);
-    this.raycaster.near = 0.01;
-    this.raycaster.far = Math.max(distToLabel - margin, margin * 0.25);
-
-    return this.raycaster.intersectObjects(walls, false).length > 0;
+    return false;
   }
 
   getViewerFloorY(player) {
@@ -181,6 +211,7 @@ export default class TourRoomLabelManager {
     const maxDist = LABEL_SHOW_MAX_MM * scale;
     const storeyTol = STOREY_SAME_FLOOR_TOLERANCE_MM * scale;
     const viewerFloorY = this.getViewerFloorY(player);
+    this._rayOrigin.set(player.x, player.y, player.z);
 
     this.labelObjects.forEach((label) => {
       const dx = label.position.x - player.x;
@@ -196,7 +227,7 @@ export default class TourRoomLabelManager {
         opacity = 1 - (dist - minDist) / (maxDist - minDist);
       }
 
-      if (this.isLabelOccludedByWall(label)) {
+      if (opacity > 0.02 && this.isLabelOccludedByWall(label)) {
         opacity = 0;
       }
 
@@ -221,7 +252,7 @@ export default class TourRoomLabelManager {
       }
     });
     this.labelObjects = [];
-    this.wallMeshes = null;
+    this.wallSegments = null;
   }
 
   dispose() {
