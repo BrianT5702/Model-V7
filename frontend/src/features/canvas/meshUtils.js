@@ -1,8 +1,5 @@
 // Utility functions for mesh creation in Three.js
 // Note: CSG operations are handled via vertex manipulation instead of three-csg-ts
-// Per-wall console.log was freezing large models while the devtools serialized each mesh.
-
-const meshLog = () => {};
 
 import { THREE_CONFIG } from './threeConfig';
 import { DIMENSION_CONFIG } from './DimensionConfig';
@@ -413,7 +410,7 @@ function compute45MiterLocalXs({
 
 export function createWallMesh(instance, wall) {
   // ALWAYS LOG FIRST - This verifies function is called in 3D
-  meshLog(`[3D Wall Mesh] Creating mesh for Wall ${wall.id}`, {
+  console.log(`[3D Wall Mesh] Creating mesh for Wall ${wall.id}`, {
     wallId: wall.id,
     hasInstance: !!instance,
     hasJoints: !!instance.joints,
@@ -429,7 +426,7 @@ export function createWallMesh(instance, wall) {
   
   // DEBUG for Wall 7255 - check model center calculation
   if (id === 7255) {
-    meshLog(`[Model Center Debug] Wall ${id}:`, {
+    console.log(`[Model Center Debug] Wall ${id}:`, {
       hasProject: !!instance.project,
       projectWidth: instance.project?.width,
       projectLength: instance.project?.length,
@@ -555,7 +552,7 @@ export function createWallMesh(instance, wall) {
       wallEndpointsSwapped = true;
     }
     if (id === 7255) {
-      meshLog(`[Flip Debug] Wall ${id} - unified flip:`, {
+      console.log(`[Flip Debug] Wall ${id} - unified flip:`, {
         isSlant: !isHorizontal && !isVertical,
         rhDotCenter,
         willFlip: rhDotCenter < 0,
@@ -586,7 +583,7 @@ export function createWallMesh(instance, wall) {
     
     // DEBUG for Wall 7255
     if (id === 7255) {
-      meshLog(`[Normal Debug] Wall ${id} - Normal calculation:`, {
+      console.log(`[Normal Debug] Wall ${id} - Normal calculation:`, {
         wallCoords: { start: { x: finalStartX, z: finalStartZ }, end: { x: finalEndX, z: finalEndZ } },
         wallDir: { x: dirX, z: dirZ, len, ux, uz },
         normalBeforeFlip: { x: nx, z: nz },
@@ -607,7 +604,7 @@ export function createWallMesh(instance, wall) {
     
     // DEBUG for Wall 7255 - after flip
     if (id === 7255) {
-      meshLog(`[Normal Debug] Wall ${id} - Final normal:`, {
+      console.log(`[Normal Debug] Wall ${id} - Final normal:`, {
         finalNormal: { x: finalNormX, z: finalNormZ },
         note: "This normal points from outer face (database line) to inner face",
         expectedDirection: "Should point downward (positive Z) for Wall 7255"
@@ -911,7 +908,7 @@ export function createWallMesh(instance, wall) {
       }
       // Debug logging for wall 7185
       if (id === 7185) {
-        meshLog(`[Butt-In Debug] Wall ${id} - Joint ${j.id} with wall ${otherWallId}:`, {
+        console.log(`[Butt-In Debug] Wall ${id} - Joint ${j.id} with wall ${otherWallId}:`, {
           isWall1,
           intersection: { x: jointX, z: jointZ },
           thisWallStart: { x: finalStartX, z: finalStartZ },
@@ -937,7 +934,7 @@ export function createWallMesh(instance, wall) {
       const originalStartZ = finalStartZ;
       finalStartX = finalStartX + wallDirX * startShorteningThickness;
       finalStartZ = finalStartZ + wallDirZ * startShorteningThickness;
-      meshLog(`[Butt-In Joint] Wall ${id} (wall_1) - START shortened by ${startShorteningThickness}mm:`, {
+      console.log(`[Butt-In Joint] Wall ${id} (wall_1) - START shortened by ${startShorteningThickness}mm:`, {
         wallId: id,
         jointCount: buttInJoints.length,
         startShorteningThickness,
@@ -952,7 +949,7 @@ export function createWallMesh(instance, wall) {
       const originalEndZ = finalEndZ;
       finalEndX = finalEndX - wallDirX * endShorteningThickness;
       finalEndZ = finalEndZ - wallDirZ * endShorteningThickness;
-      meshLog(`[Butt-In Joint] Wall ${id} (wall_1) - END shortened by ${endShorteningThickness}mm:`, {
+      console.log(`[Butt-In Joint] Wall ${id} (wall_1) - END shortened by ${endShorteningThickness}mm:`, {
         wallId: id,
         jointCount: buttInJoints.length,
         endShorteningThickness,
@@ -1176,7 +1173,7 @@ export function createWallMesh(instance, wall) {
               jointPoint: { x: finalStartX, z: finalStartZ },
               miterXs: startMiterXs
             };
-            meshLog(`[45° Cut Debug] Wall ${id} - START 45_cut detected:`, {
+            console.log(`[45° Cut Debug] Wall ${id} - START 45_cut detected:`, {
               wallId: id,
               otherWallId: otherWall.id,
               startDist,
@@ -1234,7 +1231,7 @@ export function createWallMesh(instance, wall) {
               jointPoint: { x: finalEndX, z: finalEndZ },
               miterXs: endMiterXs
             };
-            meshLog(`[45° Cut Debug] Wall ${id} - END 45_cut detected:`, {
+            console.log(`[45° Cut Debug] Wall ${id} - END 45_cut detected:`, {
               wallId: id,
               otherWallId: otherWall.id,
               endDist,
@@ -1255,7 +1252,7 @@ export function createWallMesh(instance, wall) {
   }
   // Debug: Log final 45_cut detection results
   if (hasStart45 || hasEnd45) {
-    meshLog(`[45° Cut Debug] Wall ${id} - FINAL:`, {
+    console.log(`[45° Cut Debug] Wall ${id} - FINAL:`, {
       hasStart45,
       hasEnd45,
       startCutOnInner,
@@ -1265,7 +1262,7 @@ export function createWallMesh(instance, wall) {
   // Extension already happened in STEP 1 above
   // The 45° cut detection in STEP 2 uses the extended coordinates
   // No need to extend again here
-  // meshLog('[45° Cut Debug] Final result for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
+  // console.log('[45° Cut Debug] Final result for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
   // Calculate wall length using final coordinates (after extension)
   const finalDx = finalEndX - finalStartX;
   const finalDz = finalEndZ - finalStartZ;
@@ -1320,7 +1317,7 @@ export function createWallMesh(instance, wall) {
   const belowShapeTop = (y) => y < shapeTop - cutStepEps;
 
   const wallShape = new instance.THREE.Shape();
-  // meshLog('[45° Cut Debug] Creating wall shape for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
+  // console.log('[45° Cut Debug] Creating wall shape for wall:', id, 'hasStart45:', hasStart45, 'hasEnd45:', hasEnd45);
   // Face is otherwise a pure rectangle (length X, height Y). Miter is applied in geometry later.
   wallShape.moveTo(0, 0);
   for (const y of startMiterEdgeYs) {
@@ -1403,7 +1400,7 @@ export function createWallMesh(instance, wall) {
     
     // Debug logging for door cutout positioning
     if (isDoubleSidedSlide) {
-      meshLog(`[Door Cutout] Door ${door.id} (double-sided slide):`, {
+      console.log(`[Door Cutout] Door ${door.id} (double-sided slide):`, {
         doorPositionX: door.position_x,
         adjustedPositionX: adjustedPositionX,
         wasWallFlipped: wasWallFlipped,
@@ -1521,7 +1518,7 @@ export function createWallMesh(instance, wall) {
     : endButtPushOut;
   // Apply 45° cuts using boolean operations if needed
   if (hasStart45 || hasEnd45 || startOutOfBandShift !== 0 || endOutOfBandShift !== 0) {
-    meshLog(`[45° Cut Debug] Wall ${id} - Applying 45° cuts:`, {
+    console.log(`[45° Cut Debug] Wall ${id} - Applying 45° cuts:`, {
       hasStart45,
       hasEnd45,
       startCutOnInner,
@@ -1566,14 +1563,14 @@ export function createWallMesh(instance, wall) {
       startOutOfBandShift,
       endOutOfBandShift
     );
-    meshLog(`[45° Cut Debug] Wall ${id} - 45° cuts applied successfully`);
+    console.log(`[45° Cut Debug] Wall ${id} - 45° cuts applied successfully`);
     // IMPORTANT: After applying cuts, we need to update the geometry
     // The geometry was modified, so we need to ensure it's properly updated
     wallMesh.geometry.attributes.position.needsUpdate = true;
     wallMesh.geometry.computeBoundingBox();
     wallMesh.geometry.computeVertexNormals();
   } else {
-    meshLog(`[45° Cut Debug] Wall ${id} - No 45° cuts detected for this wall`);
+    console.log(`[45° Cut Debug] Wall ${id} - No 45° cuts detected for this wall`);
   }
   prepareWallSurfaceGeometry(instance.THREE, wallMesh.geometry);
   ensureWallSurfaceDetail(instance.THREE, wallMesh, instance.renderer);
@@ -1592,9 +1589,7 @@ export function createWallMesh(instance, wall) {
   // This prevents unwanted lines from appearing on walls (like vertical lines from geometry artifacts)
   const edgeThreshold = 15; // degrees - only show edges with dihedral angle > 15 degrees
   let edgeLines = null;
-  // Fat edge lines are a separate draw for every wall. A large model orbits
-  // the solid walls only; the outline cost is what makes that orbit stall.
-  if (THREE_CONFIG.EDGE_LINES?.ENABLED && (instance.walls?.length || 0) < 40) {
+  if (THREE_CONFIG.EDGE_LINES?.ENABLED) {
     const edges = new instance.THREE.EdgesGeometry(wallMesh.geometry, edgeThreshold);
     // Drop earcut diagonals on the long faces (partial 45° / fill-gap joints)
     const noCapDiags = stripInteriorCapDiagonals(instance.THREE, edges, wallThickness, 0.08);
@@ -1613,7 +1608,7 @@ export function createWallMesh(instance, wall) {
   
   // Debug: Log edge count for wall 7083 to help diagnose the line issue
   if (id === 7083 && edgeLines) {
-    meshLog(`[Wall 7083 Edge Debug] edge lines enabled`, {
+    console.log(`[Wall 7083 Edge Debug] edge lines enabled`, {
       edgeThreshold,
       geometryVertices: wallMesh.geometry.attributes.position.count,
       geometryFaces: wallMesh.geometry.attributes.position.count / 3
@@ -1632,7 +1627,7 @@ export function createWallMesh(instance, wall) {
   
   // Debug: Log cutout info for wall 7083
   if (id === 7083) {
-    meshLog(`[Wall 7083 Cutout Debug] allCutouts count: ${allCutouts.length}`, {
+    console.log(`[Wall 7083 Cutout Debug] allCutouts count: ${allCutouts.length}`, {
       cutouts: cutouts.map(c => ({ start: c.start, end: c.end, height: c.height, doorInfo: c.doorInfo?.id })),
       windowCutouts: windowCutouts.map(c => ({ start: c.start, end: c.end, bottomY: c.bottomY, topY: c.topY })),
       wallDoors: wallDoors.map(d => ({ id: d.id, wall: d.wall })),
@@ -1644,7 +1639,7 @@ export function createWallMesh(instance, wall) {
   // Skip outline creation if there are no cutouts
   if (allCutouts.length === 0) {
     if (id === 7083) {
-      meshLog(`[Wall 7083] No cutouts to draw outlines for`);
+      console.log(`[Wall 7083] No cutouts to draw outlines for`);
     }
   } else {
     for (const cutout of allCutouts) {
@@ -1726,7 +1721,7 @@ export function createWallMesh(instance, wall) {
     }
     
     if (id === 7083) {
-      meshLog(`[Wall 7083] Created cutout outline:`, {
+      console.log(`[Wall 7083] Created cutout outline:`, {
         start: cutout.start,
         end: cutout.end,
         bottomY: cutoutBottomY,
@@ -1771,7 +1766,7 @@ export function createWallMesh(instance, wall) {
     
     // Debug logging for door position calculation
     if (isDoubleSidedSlide) {
-      meshLog(`[Door Position] Door ${doorInfo.id} (double-sided slide) calculatedPosition:`, {
+      console.log(`[Door Position] Door ${doorInfo.id} (double-sided slide) calculatedPosition:`, {
         cutoutStart: cutout.start,
         cutoutEnd: cutout.end,
         cutoutMid: mid,
@@ -1786,7 +1781,7 @@ export function createWallMesh(instance, wall) {
     
     // Debug: Log if door has windows
     if (doorInfo.windows && doorInfo.windows.length > 0) {
-      meshLog(`[createWallMesh] Door ${doorInfo.id} has ${doorInfo.windows.length} window(s) when setting calculatedPosition`);
+      console.log(`[createWallMesh] Door ${doorInfo.id} has ${doorInfo.windows.length} window(s) when setting calculatedPosition`);
     }
   }
   
@@ -2120,7 +2115,7 @@ function apply45DegreeCuts(
   startOutOfBandShift = 0,
   endOutOfBandShift = 0
 ) {
-  meshLog(`[apply45DegreeCuts] Called with:`, {
+  console.log(`[apply45DegreeCuts] Called with:`, {
     hasStart45,
     hasEnd45,
     startCutOnInner,
@@ -2167,7 +2162,7 @@ function apply45DegreeCuts(
     Number.isFinite(endMiterXs.xOuter) &&
     Number.isFinite(endMiterXs.xInner);
 
-  meshLog(`[apply45DegreeCuts] Geometry bounds:`, {
+  console.log(`[apply45DegreeCuts] Geometry bounds:`, {
     minX,
     maxX,
     minZ,
@@ -2213,7 +2208,7 @@ function apply45DegreeCuts(
           }
           endCutCount++;
           if (endCutCount <= 5) {
-            meshLog(`[apply45DegreeCuts] End cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasEndSlantMiter}`);
+            console.log(`[apply45DegreeCuts] End cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasEndSlantMiter}`);
           }
         }
       } else if (endOutOfBandShift !== 0) {
@@ -2235,7 +2230,7 @@ function apply45DegreeCuts(
           }
           startCutCount++;
           if (startCutCount <= 5) {
-            meshLog(`[apply45DegreeCuts] Start cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasStartSlantMiter}`);
+            console.log(`[apply45DegreeCuts] Start cut vertex ${i}: x=${oldX} -> ${arr[ix]}, y=${y}, t=${t}, slant=${hasStartSlantMiter}`);
           }
         }
       } else if (startOutOfBandShift !== 0) {
@@ -2244,7 +2239,7 @@ function apply45DegreeCuts(
       }
     }
   }
-  meshLog(`[apply45DegreeCuts] Applied cuts:`, {
+  console.log(`[apply45DegreeCuts] Applied cuts:`, {
     startCutCount,
     endCutCount,
     startPullBackCount,
@@ -3302,9 +3297,9 @@ export function createDoorMesh(instance, door, wall) {
   
   // Debug: Log door windows
   if (door.windows && door.windows.length > 0) {
-    meshLog(`[Door ${door.id}] Has ${door.windows.length} window(s):`, door.windows);
+    console.log(`[Door ${door.id}] Has ${door.windows.length} window(s):`, door.windows);
   } else {
-    meshLog(`[Door ${door.id}] No windows found. Door object:`, door);
+    console.log(`[Door ${door.id}] No windows found. Door object:`, door);
   }
   
   // IMPORTANT: This function handles door mesh creation with wall flipping adjustments.
@@ -3352,7 +3347,7 @@ export function createDoorMesh(instance, door, wall) {
     if (wallData && wallData.fill_gap_mode && wallData.gap_base_position !== null && wallData.gap_base_position !== undefined) {
       // Gap-fill mode: position at gap base (matches wall mesh positioning)
       const gapBasePosition = wallData.gap_base_position * scale;
-      meshLog(`[Door ${door.id}] Using gap-fill base position: ${gapBasePosition}mm`);
+      console.log(`[Door ${door.id}] Using gap-fill base position: ${gapBasePosition}mm`);
       return gapBasePosition;
     }
     
@@ -3362,7 +3357,7 @@ export function createDoorMesh(instance, door, wall) {
       // This matches exactly how walls are positioned in createWallMesh
       const wallBaseElevation = wallData.base_elevation_mm ?? 0;
       
-      meshLog(`[Door ${door.id}] Using wall base elevation (manual): ${wallBaseElevation * scale}mm (absolute value, no storey)`);
+      console.log(`[Door ${door.id}] Using wall base elevation (manual): ${wallBaseElevation * scale}mm (absolute value, no storey)`);
       return wallBaseElevation * scale;
     }
     
@@ -3424,7 +3419,7 @@ export function createDoorMesh(instance, door, wall) {
       console.warn(`[Door ${door.id}] WARNING: No wall or room data found, using floor level (0mm)`);
     }
     
-    meshLog(`[Door ${door.id}] Using room base elevation: ${roomBaseElevation * scale}mm (wallData: ${wallData ? 'found' : 'not found'}, room: ${room ? 'found' : 'not found'}, roomsContainingWall: ${roomsContainingWallCount})`);
+    console.log(`[Door ${door.id}] Using room base elevation: ${roomBaseElevation * scale}mm (wallData: ${wallData ? 'found' : 'not found'}, room: ${room ? 'found' : 'not found'}, roomsContainingWall: ${roomsContainingWallCount})`);
     return roomBaseElevation * scale;
   };
   
@@ -3481,7 +3476,7 @@ export function createDoorMesh(instance, door, wall) {
   const doorYPosition = doorBaseElevation + floorThickness + (doorHeight / 2);
   
   // Debug logging for door positioning
-  meshLog(`[Door ${door.id}] Positioning:`, {
+  console.log(`[Door ${door.id}] Positioning:`, {
     doorBaseElevation: doorBaseElevation,
     floorThickness: floorThickness,
     doorHeight: doorHeight,
