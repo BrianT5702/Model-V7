@@ -348602,3 +348602,136 @@ Traceback (most recent call last):
 django.db.utils.IntegrityError: null value in column "legacy_wall_plan" of relation "core_project" violates not-null constraint
 DETAIL:  Failing row contains (591, STORIO, 199700, 113885, 40000, 200, 2026-10-27 10:02:03.746616+00, 2026-10-27 10:02:03.746616+00, 0, null, 5, 5, null, f, null, null).
 
+INFO 2026-10-30 11:48:51,836 autoreload 14280 37124 Watching for file changes with StatReloader
+INFO 2026-10-30 11:53:09,004 views 14280 34532 Updating room with data: {'id': 870, 'walls': [13448, 13449, 13450, 13451, 13452, 13453, 13454, 13455, 13456, 13457, 13458, 13459, 13470, 13363, 13364, 13626, 13627, 13628, 13629], 'ceiling_plan': None, 'floor_plan': None, 'ceiling_zones': [], 'zone_ceiling_plan': None, 'room_name': 'LOADING BAY 3', 'floor_type': 'Slab', 'floor_thickness': 100, 'floor_layers': 1, 'temperature': '15.00', 'temperature_min': '15.00', 'temperature_max': '15.00', 'height': 6000, 'height_min': 6000, 'height_max': 6000, 'base_elevation_mm': 0, 'allow_variable_wall_heights': False, 'exclude_from_ceiling': False, 'remarks': '', 'room_points': [{'x': 88625, 'y': 113885}, {'x': 93075, 'y': 113885}, {'x': 93075, 'y': 113250}, {'x': 94125, 'y': 113250}, {'x': 94125, 'y': 113885}, {'x': 102375, 'y': 113885}, {'x': 102375, 'y': 113250}, {'x': 103525, 'y': 113250}, {'x': 103525, 'y': 113885}, {'x': 119300, 'y': 113885}, {'x': 119300, 'y': 113250}, {'x': 120500, 'y': 113250}, {'x': 120500, 'y': 99455}, {'x': 119270, 'y': 99455}, {'x': 119270, 'y': 98325}, {'x': 94180, 'y': 98325}, {'x': 94180, 'y': 99455}, {'x': 93050, 'y': 99455}, {'x': 93050, 'y': 103625}, {'x': 88625, 'y': 103625}], 'label_position': {'x': 105634.59147471441, 'y': 106011.85938366872}, 'project': 592, 'storey': 249}
+INFO 2026-10-30 11:53:09,051 views 14280 34532 Found room to update: 870, current height: 6000.0
+INFO 2026-10-30 11:53:09,136 views 14280 34532 Updated room height to: 6000.0
+INFO 2026-10-30 11:53:09,137 views 14280 34532 Updating 19 walls with new height: 6000.0, room storey: 249
+INFO 2026-10-30 11:53:09,137 services 14280 34532 update_wall_heights_for_room called with wall_ids: [13363, 13364, 13448, 13449, 13450, 13451, 13452, 13453, 13454, 13455, 13456, 13457, 13458, 13459, 13470, 13626, 13627, 13628, 13629], new_height: 6000.0, room_storey_id: 249
+INFO 2026-10-30 11:53:09,137 services 14280 34532 Converted wall_ids to integers: [13363, 13364, 13448, 13449, 13450, 13451, 13452, 13453, 13454, 13455, 13456, 13457, 13458, 13459, 13470, 13626, 13627, 13628, 13629]
+INFO 2026-10-30 11:53:09,139 services 14280 34532 Found 19 walls to update
+INFO 2026-10-30 11:53:09,143 services 14280 34532 Processing wall 13363: current height = 10000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,144 services 14280 34532 Wall 13363 (storey 249) is shared by 4 room(s) on the same storey
+INFO 2026-10-30 11:53:09,146 services 14280 34532   Room 863 (LOADING BAY 2, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,146 services 14280 34532   Room 866 (WORK ROOM 2, storey 249): height = 10000.0
+INFO 2026-10-30 11:53:09,146 services 14280 34532   Room 867 (WORK ROOM 3, storey 249): height = 10000.0
+INFO 2026-10-30 11:53:09,146 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,147 services 14280 34532 Wall 13363 is shared by 4 room(s) on the same storey, using max height: 10000.0
+INFO 2026-10-30 11:53:09,159 services 14280 34532 Wall 13363: updated to height = 10000.0
+INFO 2026-10-30 11:53:09,159 services 14280 34532 Processing wall 13364: current height = 10000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,160 services 14280 34532 Wall 13364 (storey 249) is shared by 4 room(s) on the same storey
+INFO 2026-10-30 11:53:09,162 services 14280 34532   Room 867 (WORK ROOM 3, storey 249): height = 10000.0
+INFO 2026-10-30 11:53:09,162 services 14280 34532   Room 868 (INBOUND/OUTBOUND 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,162 services 14280 34532   Room 876 (ANTE ROOM 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,162 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,162 services 14280 34532 Wall 13364 is shared by 4 room(s) on the same storey, using max height: 10000.0
+INFO 2026-10-30 11:53:09,173 services 14280 34532 Wall 13364: updated to height = 10000.0
+INFO 2026-10-30 11:53:09,174 services 14280 34532 Processing wall 13448: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,175 services 14280 34532 Wall 13448 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,176 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,176 services 14280 34532 Wall 13448 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,198 services 14280 34532 Wall 13448: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,198 services 14280 34532 Processing wall 13449: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,199 services 14280 34532 Wall 13449 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,201 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,201 services 14280 34532 Wall 13449 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,212 services 14280 34532 Wall 13449: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,212 services 14280 34532 Processing wall 13450: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,213 services 14280 34532 Wall 13450 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,214 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,214 services 14280 34532 Wall 13450 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,226 services 14280 34532 Wall 13450: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,226 services 14280 34532 Processing wall 13451: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,227 services 14280 34532 Wall 13451 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,229 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,229 services 14280 34532 Wall 13451 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,241 services 14280 34532 Wall 13451: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,241 services 14280 34532 Processing wall 13452: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,241 services 14280 34532 Wall 13452 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,241 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,241 services 14280 34532 Wall 13452 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,255 services 14280 34532 Wall 13452: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,256 services 14280 34532 Processing wall 13453: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,257 services 14280 34532 Wall 13453 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,258 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,258 services 14280 34532 Wall 13453 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,269 services 14280 34532 Wall 13453: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,269 services 14280 34532 Processing wall 13454: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,271 services 14280 34532 Wall 13454 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,272 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,272 services 14280 34532 Wall 13454 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,283 services 14280 34532 Wall 13454: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,283 services 14280 34532 Processing wall 13455: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,286 services 14280 34532 Wall 13455 (storey 249) is shared by 2 room(s) on the same storey
+INFO 2026-10-30 11:53:09,287 services 14280 34532   Room 871 (LOADING BAY 4, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,287 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,287 services 14280 34532 Wall 13455 is shared by 2 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,302 services 14280 34532 Wall 13455: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,302 services 14280 34532 Processing wall 13456: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,304 services 14280 34532 Wall 13456 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,305 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,305 services 14280 34532 Wall 13456 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,317 services 14280 34532 Wall 13456: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,318 services 14280 34532 Processing wall 13457: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,319 services 14280 34532 Wall 13457 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,320 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,320 services 14280 34532 Wall 13457 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,331 services 14280 34532 Wall 13457: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,332 services 14280 34532 Processing wall 13458: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,334 services 14280 34532 Wall 13458 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,335 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,339 services 14280 34532 Wall 13458 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,356 services 14280 34532 Wall 13458: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,356 services 14280 34532 Processing wall 13459: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,357 services 14280 34532 Wall 13459 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,359 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,360 services 14280 34532 Wall 13459 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,372 services 14280 34532 Wall 13459: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,373 services 14280 34532 Processing wall 13470: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,374 services 14280 34532 Wall 13470 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,376 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,376 services 14280 34532 Wall 13470 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,388 services 14280 34532 Wall 13470: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,389 services 14280 34532 Processing wall 13626: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,389 services 14280 34532 Wall 13626 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,389 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,389 services 14280 34532 Wall 13626 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,405 services 14280 34532 Wall 13626: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,405 services 14280 34532 Processing wall 13627: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,406 services 14280 34532 Wall 13627 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,407 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,407 services 14280 34532 Wall 13627 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,434 services 14280 34532 Wall 13627: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,435 services 14280 34532 Processing wall 13628: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,436 services 14280 34532 Wall 13628 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,439 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,439 services 14280 34532 Wall 13628 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,454 services 14280 34532 Wall 13628: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,454 services 14280 34532 Processing wall 13629: current height = 6000.0, storey_id = 249
+INFO 2026-10-30 11:53:09,456 services 14280 34532 Wall 13629 (storey 249) is shared by 1 room(s) on the same storey
+INFO 2026-10-30 11:53:09,457 services 14280 34532   Room 870 (LOADING BAY 3, storey 249): height = 6000.0
+INFO 2026-10-30 11:53:09,457 services 14280 34532 Wall 13629 is shared by 1 room(s) on the same storey, using max height: 6000.0
+INFO 2026-10-30 11:53:09,471 services 14280 34532 Wall 13629: updated to height = 6000.0
+INFO 2026-10-30 11:53:09,471 services 14280 34532 Updated 19 walls total
+INFO 2026-10-30 11:53:09,472 views 14280 34532 Successfully updated 19 walls
+INFO 2026-10-30 11:53:09,472 views 14280 34532 Skipping boundary recalculation for room 870: client supplied room_points
+INFO 2026-10-30 11:53:09,491 services 14280 34532 Updated base_elevation_mm for 0 wall(s)
+INFO 2026-10-30 11:53:09,491 views 14280 34532 Updated base elevations for 19 walls after room base elevation change
+INFO 2026-10-30 12:16:47,936 autoreload 14280 37124 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:16:49,273 autoreload 35676 30888 Watching for file changes with StatReloader
+INFO 2026-10-30 12:17:01,334 autoreload 35676 30888 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:17:02,584 autoreload 12436 31860 Watching for file changes with StatReloader
+INFO 2026-10-30 12:17:09,583 autoreload 12436 31860 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:17:11,073 autoreload 30728 30256 Watching for file changes with StatReloader
+INFO 2026-10-30 12:17:19,484 autoreload 30728 30256 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:17:21,098 autoreload 7892 32088 Watching for file changes with StatReloader
+INFO 2026-10-30 12:17:24,165 autoreload 7892 32088 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:17:25,231 autoreload 31872 32404 Watching for file changes with StatReloader
+INFO 2026-10-30 12:17:38,515 autoreload 31872 32404 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:17:39,573 autoreload 36176 35324 Watching for file changes with StatReloader
+INFO 2026-10-30 12:18:45,799 autoreload 36176 35324 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:18:46,897 autoreload 25576 27924 Watching for file changes with StatReloader
+INFO 2026-10-30 12:18:49,542 autoreload 25576 27924 C:\Users\brian\OneDrive\Desktop\United Panel\UPFYP\Code Clean Trying\Code Clean Try 1\Model-V6\core\services.py changed, reloading.
+INFO 2026-10-30 12:18:50,498 autoreload 29596 4784 Watching for file changes with StatReloader
+INFO 2026-10-30 12:19:01,829 services 11612 35096 Ceiling generation complete: 11 panels across 2 rooms
+INFO 2026-10-30 12:19:01,889 services 11612 35096 Ceiling plan generated for project 1: 11 panels, strategy=mixed

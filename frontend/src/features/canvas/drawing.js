@@ -1957,6 +1957,16 @@ function oppositePlanEdge(edge) {
     return 'top';
 }
 
+/**
+ * The digits have to sit inside the bay they measure. When the text is wider
+ * than that bay, drawing it covers the next number. Leave it out until the
+ * view is close enough for the bay to hold the text.
+ */
+function dimensionTextFitsSpan(textWidth, spanPx) {
+    if (!(textWidth > 0)) return true;
+    return spanPx >= textWidth + 4;
+}
+
 /** Wall/ceiling/floor plan dimension font size (sqrt zoom scaling, clamped min–max px). */
 export function computeWallPlanDimensionFontSize(scaleFactor, initialScale = 1) {
     const calculatedFontSize = DIMENSION_CONFIG.FONT_SIZE * scaleFactor;
@@ -3848,6 +3858,14 @@ export function drawDimensions(
             );
 
         let isNearWallDimension = !onExteriorEdge && !!hostForNear;
+        const dimSpanPx = Math.hypot(
+            (dimEndX - dimStartX) * scaleFactor,
+            (dimEndY - dimStartY) * scaleFactor
+        );
+        if (!dimensionTextFitsSpan(textWidth, dimSpanPx)) {
+            context.restore();
+            return;
+        }
         let wallLaneSpacing = isNearWallDimension
             ? DIMENSION_CONFIG.LANE_SPACING
             : DIMENSION_CONFIG.WALL_EXTERNAL_LANE_SPACING;
@@ -6650,6 +6668,11 @@ function placePanelSpanDimension({
     const fontSize = applyNearWallFontSize(computeWallPlanDimensionFontSize(scaleFactor, initialScale));
     context.font = `${DIMENSION_CONFIG.FONT_WEIGHT} ${fontSize}px ${DIMENSION_CONFIG.FONT_FAMILY}`;
     const textWidth = context.measureText(text).width;
+    const panelSpanPx = Math.hypot(
+        (dimEndX - dimStartX) * scaleFactor,
+        (dimEndY - dimStartY) * scaleFactor
+    );
+    if (!dimensionTextFitsSpan(textWidth, panelSpanPx)) return false;
     // Same rule as wall dimensions: judge the wall, not the snapped panel ends.
     // A face-to-centerline chord on a horizontal wall is a few millimetres off axis.
     const wallDx = Number(wall?.end_x) - Number(wall?.start_x);

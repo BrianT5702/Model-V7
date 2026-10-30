@@ -33,7 +33,7 @@ import {
   disposeFatLineObject,
   disposeTrackedLineMaterial,
 } from './wideLineUtils';
-import { consolidateStaticMeshes } from './staticBatch';
+import { consolidateDoorHardware, consolidateStaticMeshes } from './staticBatch';
 import WallRenderer from './components/WallRenderer';
 import DoorRenderer from './components/DoorRenderer';
 import AnimationManager from './managers/AnimationManager';
@@ -132,7 +132,6 @@ export default class ThreeCanvas3D {
       THREE_CONFIG.CAMERA.NEAR,
       THREE_CONFIG.CAMERA.FAR
     );
-    // Renderer with balanced quality settings
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       logarithmicDepthBuffer: THREE_CONFIG.RENDERER.LOG_DEPTH_BUFFER,
@@ -224,12 +223,39 @@ export default class ThreeCanvas3D {
     this.init();
   }
 
-  /** Internal canvas scale: higher = sharper lines when zoomed out (see THREE_CONFIG.RENDERER). */
+  /** Internal canvas scale. See THREE_CONFIG.RENDERER. */
   getEffectivePixelRatio() {
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
     const max = THREE_CONFIG.RENDERER.MAX_PIXEL_RATIO;
     const bias = THREE_CONFIG.RENDERER.QUALITY_BIAS;
     return Math.max(1, Math.min(dpr * bias, max));
+  }
+
+  /**
+   * The building does not move while orbiting. Bake its transforms once so a
+   * drag only updates the camera. Doors and the tour marker still move.
+   */
+  freezeStaticScene() {
+    this.scene.traverse((obj) => {
+      obj.updateMatrix();
+    });
+    this.scene.updateMatrixWorld(true);
+    this.scene.traverse((obj) => {
+      if (obj === this.scene) return;
+      let node = obj;
+      while (node) {
+        const name = node.name || '';
+        if (
+          node.userData?.isDoor
+          || node.userData?.doorId
+          || name === 'tour-placement-marker'
+        ) {
+          return;
+        }
+        node = node.parent;
+      }
+      obj.matrixAutoUpdate = false;
+    });
   }
 
   init() {
@@ -309,7 +335,7 @@ export default class ThreeCanvas3D {
       THREE_CONFIG.CAMERA.DEFAULT_POSITION.z
     );
     this.camera.lookAt(0, 0, 0);
-  
+
     addStudioEnvironment(this);
     addGrid(this);
     addLighting(this);
@@ -328,6 +354,7 @@ export default class ThreeCanvas3D {
     fitMainLightShadows(this);
     setupPresentationPostFx(this);
     updatePresentationAoClip(this);
+    this.freezeStaticScene();
 
     // Add a red dot at the model center (disabled for cleaner view)
     // Uncomment the following lines to enable debug marker
@@ -343,7 +370,8 @@ export default class ThreeCanvas3D {
   
     // Setup responsive resize handling
     this.setupResizeHandlers();
-  
+
+    this._renderRequested = true;
     this.animate();
   }
 
@@ -364,6 +392,7 @@ export default class ThreeCanvas3D {
     syncLineMaterialResolution(width, height, this.renderer.getPixelRatio());
     resizePresentationPostFx(this, width, height);
     this.tourRoomLabels?.syncRendererSize();
+    this._renderRequested = true;
 
     debugLog(`📱 Resize: ${width}x${height} (aspect: ${this.camera.aspect.toFixed(2)})`);
   }
@@ -725,7 +754,7 @@ getModelBounds() {
     }
   }  
 
-  // Animation loop
+  // The model is built once. Draw again only when the camera or a door moves.
   animate() {
     if (this._disposed) {
       return;
@@ -734,13 +763,27 @@ getModelBounds() {
     if (!this.renderer || !this.scene || !this.camera) {
       return;
     }
+    let cameraMoved = false;
     if (this._viewTransitionActive) {
-      // The interior/exterior crane owns the camera until it settles.
+      cameraMoved = true;
     } else if (this.roomTourController?.isWalking?.()) {
       this.roomTourController.update();
+      cameraMoved = true;
     } else if (this.controls) {
-      this.controls.update();
+      cameraMoved = this.controls.update() === true;
     }
+    const tweening = typeof window !== 'undefined' && window.gsap?.globalTimeline?.isActive?.();
+    const moving = Boolean(
+      this._orbitDragging
+      || cameraMoved
+      || this._viewTransitionActive
+      || this.roomTourController?.isWalking?.()
+    );
+    const busy = moving || tweening || this._renderRequested;
+    if (!busy) {
+      return;
+    }
+    this._renderRequested = false;
     renderPresentationPostFx(this);
 
     if (this.isTourEngaged()) {
@@ -803,6 +846,7 @@ getModelBounds() {
     this.buildModel();
     fitMainLightShadows(this);
     updatePresentationAoClip(this);
+    this.freezeStaticScene();
   }
 
   // Draw repeated seams as a few lines so a zoomed-out orbit stays smooth.
@@ -834,7 +878,8 @@ getModelBounds() {
         if (object.userData?.isWall || object.userData?.isDoor || 
             object.name?.startsWith('ceiling') || object.name?.startsWith('floor') || 
             object.userData?.isPanelLine || object.userData?.isCeilingPanelLine ||
-            object.userData?.isFatLineBatch || object.userData?.isStaticBatch) {
+            object.userData?.isFatLineBatch || object.userData?.isStaticBatch ||
+            object.userData?.isDoorHardwareBatch) {
 
           if (object.userData?.isWall) {
             object.traverse((child) => {
@@ -901,6 +946,7 @@ getModelBounds() {
       // One mesh per finish, so a zoomed-out orbit does not draw every wall.
       this.consolidateSceneFatLines();
       consolidateStaticMeshes(this.scene);
+      consolidateDoorHardware(this.scene);
 
       // Update grid size to cover the entire model area
       this.updateGridSize();
@@ -913,6 +959,7 @@ getModelBounds() {
       if (this.tourRoomLabels?.active) {
         this.tourRoomLabels.rebuild();
       }
+      this.freezeStaticScene();
     } catch (error) {
       console.error('Error building model:', error);
     }

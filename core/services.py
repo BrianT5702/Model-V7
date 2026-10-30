@@ -4550,22 +4550,29 @@ class CeilingService:
                 return {'error': height_analysis['error']}
             
             strategies = []
+
+            # Draw each room twice (vertical and horizontal). Strategy comparisons
+            # replay leftover accounting on that geometry instead of intersecting
+            # the room polygon again for every orientation combination.
+            layout_cache = CeilingService._build_orientation_layout_cache(
+                height_analysis, panel_width, panel_length
+            )
             
             # Strategy 1: All rooms vertical orientation
             vertical_strategy = CeilingService._evaluate_strategy(
-                height_analysis, 'vertical', 'all_vertical', panel_width, panel_length
+                height_analysis, 'vertical', 'all_vertical', panel_width, panel_length, layout_cache
             )
             strategies.append(vertical_strategy)
             
             # Strategy 2: All rooms horizontal orientation
             horizontal_strategy = CeilingService._evaluate_strategy(
-                height_analysis, 'horizontal', 'all_horizontal', panel_width, panel_length
+                height_analysis, 'horizontal', 'all_horizontal', panel_width, panel_length, layout_cache
             )
             strategies.append(horizontal_strategy)
             
             # Strategy 3: Each room independent orientation (optimal per room)
             independent_strategy = CeilingService._evaluate_strategy(
-                height_analysis, 'independent', 'room_optimal', panel_width, panel_length
+                height_analysis, 'independent', 'room_optimal', panel_width, panel_length, layout_cache
             )
             strategies.append(independent_strategy)
             
@@ -4603,7 +4610,7 @@ class CeilingService:
             return {'error': f'Orientation analysis failed: {str(e)}'}
 
     @staticmethod
-    def _evaluate_strategy(height_analysis, orientation_type, strategy_name, panel_width=1150, panel_length='auto'):
+    def _evaluate_strategy(height_analysis, orientation_type, strategy_name, panel_width=1150, panel_length='auto', layout_cache=None):
         """Evaluate a specific orientation strategy and calculate waste metrics"""
         try:
             total_panels = 0
@@ -4633,12 +4640,12 @@ class CeilingService:
                 if orientation_type == 'independent':
                     # Each room gets its optimal orientation
                     group_result = CeilingService._evaluate_group_independent_orientation(
-                        group_data, panel_width, panel_length
+                        group_data, panel_width, panel_length, layout_cache=layout_cache
                     )
                 else:
                     # All rooms use the same orientation
                     group_result = CeilingService._evaluate_group_fixed_orientation(
-                        group_data, orientation_type, panel_width, panel_length
+                        group_data, orientation_type, panel_width, panel_length, layout_cache=layout_cache
                     )
                 
                 total_panels += group_result['total_panels']
@@ -4676,7 +4683,81 @@ class CeilingService:
             }
 
     @staticmethod
-    def _evaluate_group_fixed_orientation(group_data, orientation, panel_width=1150, panel_length='auto'):
+    def _analysis_group_thickness(group_data):
+        rooms = group_data.get('rooms') or []
+        if not rooms:
+            return 20.0
+        return rooms[0].get('ceiling_thickness', 20.0)
+
+    @staticmethod
+    def _build_orientation_layout_cache(height_analysis, panel_width, panel_length):
+        """Panel geometry and leftover steps for each room, once per orientation."""
+        cache = {}
+        for group_data in height_analysis.get('height_groups', {}).values():
+            ceiling_thickness = CeilingService._analysis_group_thickness(group_data)
+            for room_info in group_data.get('rooms') or []:
+                for orientation in ('vertical', 'horizontal'):
+                    steps = []
+                    panels = CeilingService._generate_panels_with_orientation(
+                        room_info,
+                        orientation,
+                        panel_width,
+                        panel_length,
+                        None,
+                        ceiling_thickness,
+                        stock_steps=steps,
+                    )
+                    cache[(room_info['id'], orientation)] = (panels, steps)
+        return cache
+
+    @staticmethod
+    def _replay_stock_steps(leftover_tracker, stock_steps):
+        """Apply cached cut/leftover decisions to a tracker. Geometry is not rebuilt."""
+        if leftover_tracker is None or not stock_steps:
+            return
+        for step in stock_steps:
+            settings = step.get('panel_settings')
+            if step['needs_width_cut']:
+                compatible_leftover = leftover_tracker.find_compatible_leftover(
+                    needed_width=step['stock_width_used'],
+                    needed_length=step['stock_length'],
+                    needed_thickness=step['thickness'],
+                    panel_settings=settings,
+                )
+                if compatible_leftover:
+                    leftover_tracker.use_leftover(compatible_leftover, step['stock_width_used'])
+                else:
+                    leftover_width = step['max_stock_width'] - step['stock_width_used']
+                    if leftover_width > 5.0:
+                        leftover_tracker.add_leftover(
+                            length=step['stock_length'],
+                            thickness=step['thickness'],
+                            width_remaining=leftover_width,
+                            panel_settings=settings,
+                        )
+            else:
+                for length, thickness, width in step.get('scraps') or []:
+                    leftover_tracker.add_leftover(
+                        length,
+                        thickness,
+                        width,
+                        panel_settings=settings,
+                    )
+
+    @staticmethod
+    def _panels_for_analysis(room_info, orientation, panel_width, panel_length, ceiling_thickness, layout_cache, leftover_tracker=None):
+        """Return cached panels, replaying leftovers when a tracker is supplied."""
+        cached = None if layout_cache is None else layout_cache.get((room_info['id'], orientation))
+        if cached is not None:
+            panels, steps = cached
+            CeilingService._replay_stock_steps(leftover_tracker, steps)
+            return panels
+        return CeilingService._generate_panels_with_orientation(
+            room_info, orientation, panel_width, panel_length, leftover_tracker, ceiling_thickness
+        )
+
+    @staticmethod
+    def _evaluate_group_fixed_orientation(group_data, orientation, panel_width=1150, panel_length='auto', layout_cache=None):
         """Evaluate a height group with fixed orientation for all rooms with leftover tracking"""
         total_panels = 0
         total_waste_area = 0.0
@@ -4685,7 +4766,7 @@ class CeilingService:
         
         # Create leftover tracker for this strategy evaluation
         strategy_tracker = LeftoverTracker(context=f'ANALYSIS-{orientation[0].upper()}')
-        ceiling_thickness = group_data['rooms'][0].get('ceiling_thickness', 20.0) if group_data['rooms'] else 20.0
+        ceiling_thickness = CeilingService._analysis_group_thickness(group_data)
         
         for room_info in group_data['rooms']:
             # Calculate room area
@@ -4693,8 +4774,9 @@ class CeilingService:
             total_room_area += room_area
             
             # Generate panels with fixed orientation and leftover tracking
-            panels = CeilingService._generate_panels_with_orientation(
-                room_info, orientation, panel_width, panel_length, strategy_tracker, ceiling_thickness
+            panels = CeilingService._panels_for_analysis(
+                room_info, orientation, panel_width, panel_length, ceiling_thickness,
+                layout_cache, strategy_tracker,
             )
             
             # Calculate waste for this room
@@ -4733,7 +4815,7 @@ class CeilingService:
         }
 
     @staticmethod
-    def _evaluate_orientation_combination(rooms, orientation_combo, panel_width, panel_length, ceiling_thickness):
+    def _evaluate_orientation_combination(rooms, orientation_combo, panel_width, panel_length, ceiling_thickness, layout_cache=None):
         """Evaluate a specific combination of orientations with leftover tracking
         
         Args:
@@ -4760,9 +4842,9 @@ class CeilingService:
             room_area = room_info['area']
             total_room_area += room_area
             
-            # Generate panels with this orientation and the combo tracker
-            panels = CeilingService._generate_panels_with_orientation(
-                room_info, orientation, panel_width, panel_length, combo_tracker, ceiling_thickness
+            panels = CeilingService._panels_for_analysis(
+                room_info, orientation, panel_width, panel_length, ceiling_thickness,
+                layout_cache, combo_tracker,
             )
             
             waste_area = CeilingService._calculate_room_waste(panels, room_info, orientation)
@@ -4795,17 +4877,18 @@ class CeilingService:
         }
     
     @staticmethod
-    def _evaluate_group_independent_orientation(group_data, panel_width=1150, panel_length='auto'):
+    def _evaluate_group_independent_orientation(group_data, panel_width=1150, panel_length='auto', layout_cache=None):
         """Evaluate a height group with GLOBAL optimization - finds the best combination of orientations
         that minimizes project-wide waste by considering leftover reuse across rooms"""
         
         rooms = group_data['rooms']
-        ceiling_thickness = rooms[0].get('ceiling_thickness', 20.0) if rooms else 20.0
+        ceiling_thickness = CeilingService._analysis_group_thickness(group_data)
         
         num_rooms = len(rooms)
         
-        # For performance: use exhaustive search for <= 10 rooms, greedy heuristic for larger projects
-        if num_rooms <= 10:
+        # 2^n leftover replays. A 10-room group is 1024 passes over every panel and
+        # blows past the client timeout on large rooms, so only small groups are exhaustive.
+        if num_rooms <= 6:
             logger.debug(f"GLOBAL OPTIMIZATION: Testing all {2**num_rooms} combinations for {num_rooms} rooms")
             
             best_combo = None
@@ -4819,7 +4902,8 @@ class CeilingService:
             
             for i, orientation_combo in enumerate(all_combos):
                 result = CeilingService._evaluate_orientation_combination(
-                    rooms, orientation_combo, panel_width, panel_length, ceiling_thickness
+                    rooms, orientation_combo, panel_width, panel_length, ceiling_thickness,
+                    layout_cache=layout_cache,
                 )
                 
                 leftover_area = result['total_leftover_area']
@@ -4851,7 +4935,7 @@ class CeilingService:
             }
         
         else:
-            # For large projects (>10 rooms), use improved greedy heuristic with look-ahead
+            # Larger groups: pick each room's lower-waste orientation instead of 2^n search.
             logger.debug(f"⚡ GREEDY HEURISTIC: Using smart greedy for {num_rooms} rooms (too many for exhaustive search)")
             
             total_panels = 0
@@ -4866,12 +4950,14 @@ class CeilingService:
                 room_area = room_info['area']
                 total_room_area += room_area
                 
-                # Test both orientations with leftover tracking
-                vertical_panels = CeilingService._generate_panels_with_orientation(
-                    room_info, 'vertical', panel_width, panel_length, strategy_tracker, ceiling_thickness
+                # Compare geometry only, then bank leftovers for the orientation we keep.
+                vertical_panels = CeilingService._panels_for_analysis(
+                    room_info, 'vertical', panel_width, panel_length, ceiling_thickness,
+                    layout_cache, None,
                 )
-                horizontal_panels = CeilingService._generate_panels_with_orientation(
-                    room_info, 'horizontal', panel_width, panel_length, strategy_tracker, ceiling_thickness
+                horizontal_panels = CeilingService._panels_for_analysis(
+                    room_info, 'horizontal', panel_width, panel_length, ceiling_thickness,
+                    layout_cache, None,
                 )
                 
                 vertical_waste = CeilingService._calculate_room_waste(vertical_panels, room_info, 'vertical')
@@ -4886,6 +4972,15 @@ class CeilingService:
                     best_orientation = 'horizontal'
                     best_panels = horizontal_panels
                     best_waste = horizontal_waste
+
+                if layout_cache is not None:
+                    chosen_steps = layout_cache[(room_info['id'], best_orientation)][1]
+                    CeilingService._replay_stock_steps(strategy_tracker, chosen_steps)
+                else:
+                    CeilingService._generate_panels_with_orientation(
+                        room_info, best_orientation, panel_width, panel_length,
+                        strategy_tracker, ceiling_thickness,
+                    )
                 
                 total_waste_area += best_waste
                 total_panels += len(best_panels)
@@ -4978,8 +5073,12 @@ class CeilingService:
             }
 
     @staticmethod
-    def _generate_panels_with_orientation(room_info, orientation, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0):
-        """Generate panels for a room with specific orientation with leftover tracking"""
+    def _generate_panels_with_orientation(room_info, orientation, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, stock_steps=None):
+        """Generate panels for a room with specific orientation with leftover tracking.
+
+        stock_steps, when a list, receives one leftover-accounting record per placed
+        piece so a later pass can replay the tracker without rebuilding geometry.
+        """
         try:
             bounding_box = room_info['bounding_box']
             panel_settings = room_info.get('panel_settings')
@@ -4996,19 +5095,21 @@ class CeilingService:
                 return CeilingService._generate_horizontal_panels(
                     bounding_box, room_info['points'], panel_width, panel_length,
                     leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
+                    stock_steps=stock_steps,
                 )
             else:
                 # Horizontal orientation: panels run left to right (horizontal strips)
                 return CeilingService._generate_vertical_panels(
                     bounding_box, room_info['points'], panel_width, panel_length,
                     leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
+                    stock_steps=stock_steps,
                 )
                 
         except Exception as e:
             return []
 
     @staticmethod
-    def _generate_vertical_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, panel_settings=None):
+    def _generate_vertical_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, panel_settings=None, stock_steps=None):
         """Generate panels that run left to right (horizontal strips) - used for horizontal orientation with leftover tracking"""
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
@@ -5031,12 +5132,13 @@ class CeilingService:
         panels = CeilingService._generate_shape_aware_panels(
             room_bounding_box, room_points, 'horizontal', max_panel_width, panel_length,
             leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
+            stock_steps=stock_steps,
         )
         
         return panels
 
     @staticmethod
-    def _generate_horizontal_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, panel_settings=None):
+    def _generate_horizontal_panels(bounding_box, room_points, panel_width=1150, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, panel_settings=None, stock_steps=None):
         """Generate panels that run up and down (vertical strips) - used for vertical orientation with leftover tracking"""
         panels = []
         max_panel_width = panel_width  # Use user-specified panel width
@@ -5048,12 +5150,13 @@ class CeilingService:
         panels = CeilingService._generate_shape_aware_panels(
             room_bounding_box, room_points, 'vertical', max_panel_width, panel_length,
             leftover_tracker, ceiling_thickness, panel_settings=panel_settings,
+            stock_steps=stock_steps,
         )
         
         return panels
 
     @staticmethod
-    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, cut_l_offset=0.0, panel_settings=None):
+    def _generate_shape_aware_panels(bounding_box, room_points, orientation, max_panel_width, panel_length='auto', leftover_tracker=None, ceiling_thickness=20.0, cut_l_offset=0.0, panel_settings=None, stock_steps=None):
         """
         Final Generator v11 (Exact Shape Transmission):
         - Calculates the intersection (L-Shape or Rect) including the cut_l gap.
@@ -5211,6 +5314,29 @@ class CeilingService:
                         # 3) For full-size L-cuts only, bank geometric scrap pieces as leftovers.
                         max_stock_width = float(max_panel_width)
                         needs_width_cut = stock_width_used < (max_stock_width - 5.0)
+                        scrap_pieces = []
+                        record_stock = leftover_tracker is not None or stock_steps is not None
+
+                        if record_stock and (not needs_width_cut) and (not is_rectangular):
+                            # Full-width L-cut from a new stock panel: keep usable geometric scraps.
+                            # Scraps depend only on the piece shape, so they can be replayed later.
+                            try:
+                                if orientation == 'horizontal':
+                                    raw_panel = box(minx, miny, minx + geo_width_x, miny + p_height)
+                                else:
+                                    raw_panel = box(minx, miny, minx + p_width, miny + geo_height_y)
+                                waste_poly = raw_panel.difference(part)
+                                if not waste_poly.is_empty:
+                                    geoms = waste_poly.geoms if hasattr(waste_poly, 'geoms') else [waste_poly]
+                                    for waste_piece in geoms:
+                                        if waste_piece.area > 5000.0:
+                                            wm_minx, wm_miny, wm_maxx, wm_maxy = waste_piece.bounds
+                                            w_val = (wm_maxy - wm_miny) if orientation == 'horizontal' else (wm_maxx - wm_minx)
+                                            l_val = (wm_maxx - wm_minx) if orientation == 'horizontal' else (wm_maxy - wm_miny)
+                                            if w_val > 50.0 and l_val > 50.0:
+                                                scrap_pieces.append((l_val, ceiling_thickness, w_val))
+                            except Exception:
+                                scrap_pieces = []
 
                         if leftover_tracker and needs_width_cut:
                             compatible_leftover = leftover_tracker.find_compatible_leftover(
@@ -5239,30 +5365,25 @@ class CeilingService:
                                     cut_notes = f"Cut from full panel; {cut_notes}"
                                 else:
                                     cut_notes = "Cut from full panel"
-                        elif leftover_tracker and not is_rectangular and not from_leftover:
-                            # Full-width L-cut from a new stock panel: keep usable geometric scraps.
-                            try:
-                                if orientation == 'horizontal':
-                                    raw_panel = box(minx, miny, minx + geo_width_x, miny + p_height)
-                                else:
-                                    raw_panel = box(minx, miny, minx + p_width, miny + geo_height_y)
-                                waste_poly = raw_panel.difference(part)
-                                if not waste_poly.is_empty:
-                                    geoms = waste_poly.geoms if hasattr(waste_poly, 'geoms') else [waste_poly]
-                                    for waste_piece in geoms:
-                                        if waste_piece.area > 5000.0:
-                                            wm_minx, wm_miny, wm_maxx, wm_maxy = waste_piece.bounds
-                                            w_val = (wm_maxy - wm_miny) if orientation == 'horizontal' else (wm_maxx - wm_minx)
-                                            l_val = (wm_maxx - wm_minx) if orientation == 'horizontal' else (wm_maxy - wm_miny)
-                                            if w_val > 50.0 and l_val > 50.0:
-                                                leftover_tracker.add_leftover(
-                                                    l_val,
-                                                    ceiling_thickness,
-                                                    w_val,
-                                                    panel_settings=normalized_panel_settings,
-                                                )
-                            except Exception:
-                                pass
+                        elif leftover_tracker and scrap_pieces:
+                            for l_val, scrap_thickness, w_val in scrap_pieces:
+                                leftover_tracker.add_leftover(
+                                    l_val,
+                                    scrap_thickness,
+                                    w_val,
+                                    panel_settings=normalized_panel_settings,
+                                )
+
+                        if stock_steps is not None:
+                            stock_steps.append({
+                                'needs_width_cut': needs_width_cut,
+                                'stock_width_used': stock_width_used,
+                                'stock_length': stock_length,
+                                'thickness': ceiling_thickness,
+                                'max_stock_width': max_stock_width,
+                                'panel_settings': normalized_panel_settings,
+                                'scraps': scrap_pieces,
+                            })
 
                         panel_data = {
                             'panel_id': f"CP_RAW_{panel_counter:03d}",

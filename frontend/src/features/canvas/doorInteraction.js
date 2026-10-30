@@ -1,6 +1,7 @@
 /** Shared door open/close state and animation for orbit mode and tour. */
 
 import { applySectionalDockPose } from './meshUtils';
+import { refreshDoorHardware } from './staticBatch';
 
 export function isDoorOpen(instance, doorInfo) {
   if (!doorInfo?.id) {
@@ -100,12 +101,13 @@ export function animateDoorToState(instance, doorContainer, doorInfo, open) {
       const doorWidth = doorInfo.width * instance.scalingFactor;
       const slideDistance = (doorWidth / 2) * 0.9;
       if (window.gsap) {
+        const refresh = () => refreshDoorHardware(doorContainer);
         if (open) {
-          window.gsap.to(leftDoor.position, { x: origLeftPos.x - slideDistance, duration: 0.85, ease: 'power2.inOut' });
-          window.gsap.to(rightDoor.position, { x: origRightPos.x + slideDistance, duration: 0.85, ease: 'power2.inOut' });
+          window.gsap.to(leftDoor.position, { x: origLeftPos.x - slideDistance, duration: 0.85, ease: 'power2.inOut', onUpdate: refresh });
+          window.gsap.to(rightDoor.position, { x: origRightPos.x + slideDistance, duration: 0.85, ease: 'power2.inOut', onUpdate: refresh });
         } else {
-          window.gsap.to(leftDoor.position, { x: origLeftPos.x, duration: 0.85, ease: 'power2.inOut' });
-          window.gsap.to(rightDoor.position, { x: origRightPos.x, duration: 0.85, ease: 'power2.inOut' });
+          window.gsap.to(leftDoor.position, { x: origLeftPos.x, duration: 0.85, ease: 'power2.inOut', onUpdate: refresh });
+          window.gsap.to(rightDoor.position, { x: origRightPos.x, duration: 0.85, ease: 'power2.inOut', onUpdate: refresh });
         }
       } else {
         leftDoor.position.x = open ? origLeftPos.x - slideDistance : origLeftPos.x;
@@ -133,6 +135,7 @@ export function animateDoorToState(instance, doorContainer, doorInfo, open) {
         x: open ? origPos.x + slideDistance * effectiveDirection : origPos.x,
         duration: 0.85,
         ease: 'power2.inOut',
+        onUpdate: () => refreshDoorHardware(doorContainer),
       });
     } else {
       doorPanel.position.x = open ? origPos.x + slideDistance * effectiveDirection : origPos.x;

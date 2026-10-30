@@ -9,6 +9,7 @@ import { panelNeedsNylonSupport } from './nylonHangerUtils';
 import useScrollContainment from '../../utils/useScrollContainment';
 
 const DEFAULT_CEILING_PANEL_LENGTH_MM = 6000;
+const CEILING_PLAN_TIMEOUT_MS = 120000;
 
 const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGenerated, onWallsUpdated = null, updateSharedPanelData = null, sharedPanelData = null, layoutPreview = null }) => {
     const { isAuthenticated } = useAuth();
@@ -1806,7 +1807,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 panel_width: panelWidth,
                 panel_length: panelLength === 'auto' ? 'auto' : customPanelLength,
                 ceiling_thickness: ceilingThickness
-            });
+            }, { timeout: CEILING_PLAN_TIMEOUT_MS });
             
             if (response.data && !response.data.error) {
                 setOrientationAnalysis(response.data);
@@ -2060,7 +2061,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                 },
                 // Room-specific configuration - ONLY this room will use these settings
                 room_specific_config: roomSpecificConfig
-            });
+            }, { timeout: CEILING_PLAN_TIMEOUT_MS });
 
             // Check if we have the expected data structure
             // Backend returns: enhanced_panels, ceiling_plans, strategy_used, etc.
@@ -2193,7 +2194,7 @@ const CeilingManager = ({ projectId, canEdit = true, onClose, onCeilingPlanGener
                     aluSuspensionCustomDrawing,
                     customSupports: customSupports
                 }
-            });
+            }, { timeout: CEILING_PLAN_TIMEOUT_MS });
 
             if (response.data && !response.data.error) {
                 // Update ceilingPlans array for multi-room mode

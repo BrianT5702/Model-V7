@@ -316,7 +316,7 @@ export async function createProjectFromChatDraft(draft) {
           enableNylonHangers: true,
           enableAluSuspension: false,
         },
-      });
+      }, { timeout: 120000 });
     } catch (err) {
       console.warn('Chatbot ceiling generation failed:', err);
       warnings.push('Ceiling panels could not be generated automatically. You can generate them on the Ceiling tab.');

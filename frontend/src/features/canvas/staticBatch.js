@@ -224,3 +224,180 @@ export function consolidateStaticMeshes(root) {
 
   return batches;
 }
+
+const _doorInv = new THREE.Matrix4();
+const _parentInv = new THREE.Matrix4();
+const _scale = new THREE.Matrix4();
+const _instance = new THREE.Matrix4();
+const _unitBox = new THREE.BoxGeometry(1, 1, 1);
+const _unitCylinder = new THREE.CylinderGeometry(1, 1, 1, 12);
+
+function hardwareScale(geometry) {
+  const p = geometry?.parameters;
+  if (!p) return null;
+  if (geometry.type === 'BoxGeometry' && p.width > 0 && p.height > 0 && p.depth > 0) {
+    _scale.makeScale(p.width, p.height, p.depth);
+    return _unitBox;
+  }
+  if (
+    geometry.type === 'CylinderGeometry'
+    && p.radialSegments === 12
+    && p.radiusTop > 0
+    && p.radiusTop === p.radiusBottom
+    && p.height > 0
+  ) {
+    _scale.makeScale(p.radiusTop, p.height, p.radiusTop);
+    return _unitCylinder;
+  }
+  return null;
+}
+
+function isDockPanel(mesh) {
+  return Boolean(mesh.userData?.isDockSkin);
+}
+
+function dockPanelMaterial(source) {
+  const material = source.clone();
+  material.map = null;
+  material.normalMap = null;
+  material.bumpMap = null;
+  material.roughnessMap = null;
+  material.userData.isDockPanelMaterial = true;
+  material.needsUpdate = true;
+  return material;
+}
+
+function fitDoorBatchBounds(batch) {
+  batch.computeBoundingSphere();
+  batch.frustumCulled = true;
+}
+
+function attachDoorBatch(door, batch, refs) {
+  door.userData.hardwareRefs = refs;
+  batch.instanceMatrix.needsUpdate = true;
+  fitDoorBatchBounds(batch);
+  batch.matrixAutoUpdate = false;
+  door.add(batch);
+}
+
+/**
+ * Each dock leaf stays a stack of horizontal panels, in its own color.
+ * Rollers, grooves, and rails that share a finish are drawn once per door.
+ * The batch stays on the door, so a click can still open it and a tour
+ * only draws the doors in front of the camera.
+ */
+export function consolidateDoorHardware(root) {
+  if (!root) return;
+  root.updateMatrixWorld(true);
+  const doors = [];
+  root.traverse((obj) => {
+    if (obj.userData?.isDoor && obj.userData?.doorId) doors.push(obj);
+  });
+  doors.forEach((door) => {
+    const panels = [];
+    const hardware = [];
+    const nodes = [];
+    door.traverse((obj) => nodes.push(obj));
+    nodes.forEach((obj) => {
+      if (!obj.isMesh || obj.isInstancedMesh || Array.isArray(obj.material)) return;
+      if (isDockPanel(obj) && obj.geometry?.type === 'BoxGeometry') {
+        panels.push(obj);
+        return;
+      }
+      if (!isDockPanel(obj) && hardwareScale(obj.geometry)) hardware.push(obj);
+    });
+
+    _doorInv.copy(door.matrixWorld).invert();
+    const refs = door.userData.hardwareRefs || [];
+
+    const panelGroups = new Map();
+    panels.forEach((mesh) => {
+      const key = `${mesh.material.uuid}|${mesh.renderOrder || 0}`;
+      const group = panelGroups.get(key);
+      if (group) group.push(mesh);
+      else panelGroups.set(key, [mesh]);
+    });
+    panelGroups.forEach((group) => {
+      if (group.length < 2) return;
+      const sample = group[0];
+      const geometry = _unitBox.clone();
+      const material = dockPanelMaterial(sample.material);
+      const batch = new THREE.InstancedMesh(geometry, material, group.length);
+      batch.name = 'dock_panel_batch';
+      batch.userData.isDoorHardwareBatch = true;
+      batch.userData.isDockSkin = true;
+      batch.castShadow = false;
+      batch.receiveShadow = false;
+      batch.renderOrder = sample.renderOrder || 0;
+      group.forEach((mesh, index) => {
+        const parent = mesh.parent;
+        hardwareScale(mesh.geometry);
+        _parentInv.copy(parent.matrixWorld).invert();
+        const local = _parentInv.clone().multiply(mesh.matrixWorld).multiply(_scale);
+        refs.push({ batch, index, node: parent, local });
+        _instance.copy(_doorInv).multiply(parent.matrixWorld).multiply(local);
+        batch.setMatrixAt(index, _instance);
+        mesh.removeFromParent();
+        mesh.geometry.dispose();
+      });
+      const retired = sample.material;
+      if (retired && retired !== material) disposeMaterialSafe(retired);
+      attachDoorBatch(door, batch, refs);
+    });
+
+    const hardwareGroups = new Map();
+    hardware.forEach((mesh) => {
+      const key = [
+        mesh.geometry.type,
+        mesh.material.uuid,
+        mesh.renderOrder || 0,
+      ].join('|');
+      const group = hardwareGroups.get(key);
+      if (group) group.push(mesh);
+      else hardwareGroups.set(key, [mesh]);
+    });
+    hardwareGroups.forEach((group) => {
+      if (group.length < 2) return;
+      const sample = group[0];
+      const unit = hardwareScale(sample.geometry);
+      const batch = new THREE.InstancedMesh(unit.clone(), sample.material, group.length);
+      batch.name = 'door_hardware_batch';
+      batch.userData.isDoorHardwareBatch = true;
+      batch.castShadow = false;
+      batch.receiveShadow = false;
+      batch.renderOrder = sample.renderOrder || 0;
+      group.forEach((mesh, index) => {
+        const parent = mesh.parent;
+        hardwareScale(mesh.geometry);
+        _parentInv.copy(parent.matrixWorld).invert();
+        const local = _parentInv.clone().multiply(mesh.matrixWorld).multiply(_scale);
+        refs.push({ batch, index, node: parent, local });
+        _instance.copy(_doorInv).multiply(parent.matrixWorld).multiply(local);
+        batch.setMatrixAt(index, _instance);
+        mesh.removeFromParent();
+        mesh.geometry.dispose();
+      });
+      attachDoorBatch(door, batch, refs);
+    });
+  });
+}
+
+export function refreshDoorHardware(door) {
+  const refs = door?.userData?.hardwareRefs;
+  if (!refs?.length) return;
+  door.updateMatrixWorld(true);
+  _doorInv.copy(door.matrixWorld).invert();
+  const touched = new Set();
+  for (let i = 0; i < refs.length; i += 1) {
+    const { batch, index, node, local } = refs[i];
+    if (!node || !batch) continue;
+    node.updateMatrixWorld();
+    _instance.copy(_doorInv).multiply(node.matrixWorld).multiply(local);
+    batch.setMatrixAt(index, _instance);
+    touched.add(batch);
+  }
+  touched.forEach((batch) => {
+    batch.instanceMatrix.needsUpdate = true;
+    fitDoorBatchBounds(batch);
+  });
+}

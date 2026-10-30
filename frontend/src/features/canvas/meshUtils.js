@@ -9,12 +9,14 @@ import {
   CUT_L_ALU_THICK_MM,
   CUT_L_FASTENER_DIA_MM,
   CUT_L_FASTENER_SPACING_MM,
+  ceilingThicknessMmForWall,
   resolveCutLRebateMm,
 } from './ceilingLJoint';
 import {
   createFatLineSegmentsFromEdgesGeometry,
   createFatLineSegmentsFromPositions,
 } from './wideLineUtils';
+import { refreshDoorHardware } from './staticBatch';
 import { resolveWallBaseElevationMm } from '../project/projectUtils';
 import { cutLRebateFacesPositiveZ, getWallInteriorNormalModel } from './wallInteriorSide';
 import { buildIntersectionsFromJoints } from '../panel/wallPanelCalculationUtils';
@@ -2487,32 +2489,6 @@ function decorateSlideLeaf(instance, leaf, {
   addSlideLeafHandle(instance, leaf, doorWidth, doorHeight, doorThickness, scale, handleOnRight, faceZSign);
 }
 
-function stampDockSkinUVs(THREE, mesh, sectionTop) {
-  const tile = THREE_CONFIG.WALL_SURFACE?.TILE_WORLD || 1;
-  const inv = 1 / tile;
-  const geo = mesh.geometry;
-  const pos = geo.attributes.position;
-  if (!pos) return;
-  const originX = mesh.position.x;
-  const originY = mesh.position.y + sectionTop;
-  let uv = geo.attributes.uv;
-  if (!uv || uv.count !== pos.count) {
-    uv = new THREE.BufferAttribute(new Float32Array(pos.count * 2), 2);
-    geo.setAttribute('uv', uv);
-  }
-  for (let i = 0; i < pos.count; i += 1) {
-    uv.setXY(i, (pos.getX(i) + originX) * inv, (pos.getY(i) + originY) * inv);
-  }
-  uv.needsUpdate = true;
-  geo.computeVertexNormals();
-  try {
-    if (geo.attributes.tangent) geo.deleteAttribute('tangent');
-    geo.computeTangents();
-  } catch {
-    // Bump map covers meshes whose tangents cannot be built.
-  }
-}
-
 function addDockSkinBox(instance, parent, material, width, height, depth, x, doorY, sectionTop) {
   if (width <= 0.02 || height <= 0.01) return null;
   const mesh = addDoorBox(
@@ -2526,8 +2502,8 @@ function addDockSkinBox(instance, parent, material, width, height, depth, x, doo
     doorY - sectionTop,
     0
   );
-  stampDockSkinUVs(instance.THREE, mesh, sectionTop);
-  ensureWallSurfaceDetail(instance.THREE, mesh, instance.renderer);
+  mesh.userData.isDockSkin = true;
+  mesh.userData.dockSectionTop = sectionTop;
   return mesh;
 }
 
@@ -2626,28 +2602,29 @@ function dockWindowRects(windows, leafW, leafH, scale) {
 /** Point and tilt along a sectional-door rail. dist 0 is the bottom of the opening. */
 export function dockRailPose(rail, dist) {
   const traveled = Math.max(0, dist);
-  const { yBottom, yTop, radius: R, verticalLen, curveLen } = rail;
+  const { yBottom, radius: R, verticalLen, curveLen } = rail;
+  const curveBaseY = yBottom + verticalLen;
   if (traveled <= verticalLen) {
     return { y: yBottom + traveled, face: 0, angle: 0 };
   }
-  const curveEnd = verticalLen + curveLen;
-  if (traveled <= curveEnd) {
-    const u = (traveled - verticalLen) / Math.max(curveLen, 0.0001);
+  const curveEnd = verticalLen + Math.max(0, curveLen);
+  if (curveLen > 0.0001 && traveled <= curveEnd) {
+    const u = (traveled - verticalLen) / curveLen;
     const a = Math.PI - u * (Math.PI / 2);
     return {
-      y: yTop + R * Math.sin(a),
+      y: curveBaseY + R * Math.sin(a),
       face: R + R * Math.cos(a),
       angle: u * (Math.PI / 2),
     };
   }
   return {
-    y: yTop + R,
+    y: curveBaseY + R,
     face: R + (traveled - curveEnd),
     angle: Math.PI / 2,
   };
 }
 
-/** Park each slat on the rail. travel 0 is closed; travelOpen lays the curtain along the ceiling. */
+/** Park each slat on the rail. travel 0 is closed; travelOpen parks the curtain at the end of the rail. */
 export function applySectionalDockPose(leaf, travel) {
   const rail = leaf?.userData?.rail;
   const sections = leaf?.userData?.sections;
@@ -2660,6 +2637,13 @@ export function applySectionalDockPose(leaf, travel) {
     section.position.z = rail.faceSign * pose.face;
     section.rotation.x = rail.faceSign * pose.angle;
   });
+  let doorRoot = leaf.parent;
+  while (doorRoot && !(doorRoot.userData?.isDoor && doorRoot.userData?.doorId)) {
+    doorRoot = doorRoot.parent;
+  }
+  if (doorRoot?.userData?.hardwareRefs) {
+    refreshDoorHardware(doorRoot);
+  }
 }
 
 function addDockWindowSlice(instance, parent, rect, leafT, scale, sectionBottom, sectionTop, glassMaterial, frameMat) {
@@ -2735,9 +2719,60 @@ function addDockRailArc(instance, parent, x, rail, faceSign, material, railW, ra
   }
 }
 
+function ceilingThicknessMmForRoom(room) {
+  // Same rule as the 3D ceiling shell: the plan thickness, otherwise 150mm.
+  const planned = Number(room?.ceiling_plan?.ceiling_thickness);
+  return Number.isFinite(planned) && planned > 0 ? planned : 150;
+}
+
 /**
- * Sectional dock curtain. Each slat hangs from a rail that runs up the
- * jamb, curves through the headroom, and continues back along the ceiling.
+ * Underside of the ceiling the rail can actually hit, in the door's local Y.
+ * Uses the lowest soffit above the door head among rooms on this wall, so a
+ * taller room on the same wall cannot send the vertical rail through the
+ * ceiling in front of the door.
+ */
+function dockCeilingInnerLocal(room, wallData, rooms, doorBaseElevation, doorYPosition, doorHeight, scale) {
+  const fallbackThickness = wallData ? ceilingThicknessMmForWall(wallData, rooms) : 150;
+  const doorHeadWorld = doorYPosition + doorHeight / 2;
+  const minClear = mmToWorld(scale, 20);
+  const linked = wallData ? getRoomsLinkedToWall(wallData, rooms || []) : [];
+  const pool = [];
+  const seen = new Set();
+  [...linked, ...(room ? [room] : [])].forEach((entry) => {
+    if (!entry || entry.exclude_from_ceiling || seen.has(entry.id)) return;
+    seen.add(entry.id);
+    pool.push(entry);
+  });
+
+  const undersides = [];
+  pool.forEach((entry) => {
+    const heightMm = Number(entry.height);
+    if (!(heightMm > 0)) return;
+    const baseMm = Number(entry.base_elevation_mm);
+    const baseWorld = Number.isFinite(baseMm) ? baseMm * scale : doorBaseElevation;
+    const thicknessMm = ceilingThicknessMmForRoom(entry);
+    const underside = baseWorld + heightMm * scale - mmToWorld(scale, thicknessMm);
+    if (underside >= doorHeadWorld - minClear) undersides.push(underside);
+  });
+
+  if (!undersides.length && wallData) {
+    const wallHeightMm = wallData.fill_gap_mode && wallData.gap_fill_height != null
+      ? Number(wallData.gap_fill_height)
+      : Number(wallData.height);
+    if (wallHeightMm > 0) {
+      const wallUnderside = doorBaseElevation + wallHeightMm * scale - mmToWorld(scale, fallbackThickness);
+      if (wallUnderside >= doorHeadWorld - minClear) undersides.push(wallUnderside);
+    }
+  }
+
+  if (!undersides.length) return null;
+  return Math.min(...undersides) - doorYPosition;
+}
+
+/**
+ * Sectional dock curtain. The rail rises straight while the ceiling leaves
+ * room for the whole curtain. When that space runs out, the rail meets the
+ * underside of the ceiling and follows it.
  * A window is cut only where the door actually has one.
  */
 function createSectionalDockAssembly(instance, {
@@ -2748,7 +2783,7 @@ function createSectionalDockAssembly(instance, {
   wallDepth,
   adjustedSide,
   scale,
-  wallTopLocal = null,
+  ceilingInnerLocal = null,
 }) {
   const d = getDoorDetail();
   const leafT = Math.max(doorThickness, mmToWorld(scale, 36));
@@ -2776,13 +2811,14 @@ function createSectionalDockAssembly(instance, {
   const sealH = mmToWorld(scale, d.DOCK_SEAL_MM ?? 26);
   const headerH = mmToWorld(scale, d.DOCK_HEADER_MM ?? 58);
 
-  const panelMat = createDoorLeafMaterial(instance.THREE, instance.renderer, {
+  const doorFinish = THREE_CONFIG.MATERIALS.DOOR || {};
+  const panelMat = makeStdMaterial(instance.THREE, doorFinish, {
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
   });
   const grooveMat = makeStdMaterial(instance.THREE, {
-    color: 0x6a737b,
+    color: 0x3c444c,
     roughness: 0.72,
     metalness: 0.08,
     envMapIntensity: 0.12,
@@ -2826,22 +2862,40 @@ function createSectionalDockAssembly(instance, {
 
   const yBottom = -doorHeight / 2;
   const yTop = doorHeight / 2;
-  const roofClear = mmToWorld(scale, 36);
-  const ceilingY = Number.isFinite(wallTopLocal) ? wallTopLocal - roofClear : null;
-  const desiredRadius = mmToWorld(scale, d.DOCK_RAIL_RADIUS_MM ?? 340);
-  const headroom = ceilingY == null ? desiredRadius : ceilingY - yTop;
-  // Keep the ceiling rail under the roof. When the door is close to the roof,
-  // the curve drops toward the head of the door instead of poking through.
-  const radius = ceilingY == null
-    ? desiredRadius
-    : Math.min(desiredRadius, Math.max(0, headroom * 0.55));
-  const verticalLen = doorHeight;
-  const curveLen = radius * (Math.PI / 2);
   const travelOpen = doorHeight + mmToWorld(scale, 40);
-  const horizontalLen = Math.max(
-    mmToWorld(scale, 600),
-    travelOpen + doorHeight - verticalLen - curveLen + mmToWorld(scale, 220)
-  );
+  const tail = mmToWorld(scale, 180);
+  const parkAboveHead = travelOpen + tail;
+  const ceilingGap = mmToWorld(scale, 10);
+  const railW = mmToWorld(scale, 34);
+  const railT = mmToWorld(scale, 46);
+  const ceilingKnown = Number.isFinite(ceilingInnerLocal);
+  const riseAvailable = ceilingKnown
+    ? Math.max(0, ceilingInnerLocal - ceilingGap - yTop)
+    : Infinity;
+  // Horizontal slats turn their thickness upward, so the ceiling run sits
+  // low enough that a parked panel stays under the soffit.
+  const followClear = Math.max(railT / 2, leafT / 2) + ceilingGap;
+  const riseToCenter = ceilingKnown
+    ? Math.max(0, ceilingInnerLocal - followClear - yTop)
+    : Infinity;
+
+  let lift;
+  let radius;
+  let curveLen;
+  let horizontalLen;
+  if (riseAvailable >= parkAboveHead) {
+    lift = parkAboveHead;
+    radius = 0;
+    curveLen = 0;
+    horizontalLen = 0;
+  } else {
+    const desiredRadius = mmToWorld(scale, d.DOCK_RAIL_RADIUS_MM ?? 340);
+    radius = Math.min(desiredRadius, riseToCenter);
+    lift = Math.max(0, riseToCenter - radius);
+    curveLen = radius * (Math.PI / 2);
+    horizontalLen = Math.max(0, parkAboveHead - lift - curveLen);
+  }
+  const verticalLen = doorHeight + lift;
   const rail = {
     yBottom,
     yTop,
@@ -2851,9 +2905,7 @@ function createSectionalDockAssembly(instance, {
     sectionH,
     faceSign,
   };
-  const railW = mmToWorld(scale, 34);
-  const railT = mmToWorld(scale, 46);
-  const horizontalY = yTop + radius;
+  const horizontalY = yTop + lift + radius;
   const horizontalStart = radius;
 
   const frame = new instance.THREE.Object3D();
@@ -2872,24 +2924,41 @@ function createSectionalDockAssembly(instance, {
       0,
       faceSign * trackD * 0.12
     );
-    addDockRailArc(instance, frame, x, rail, faceSign, trackMat, railW, railT);
-    addDoorBox(
-      instance,
-      frame,
-      trackMat,
-      railW,
-      railT,
-      horizontalLen,
-      x,
-      horizontalY,
-      faceSign * (horizontalStart + horizontalLen / 2)
-    );
-    const gapAboveRail = ceilingY == null
-      ? mmToWorld(scale, 48)
-      : ceilingY - (horizontalY + railT / 2);
+    if (lift > mmToWorld(scale, 8)) {
+      addDoorBox(
+        instance,
+        frame,
+        trackMat,
+        railW,
+        lift,
+        railT,
+        x,
+        yTop + lift / 2,
+        0
+      );
+    }
+    if (curveLen > mmToWorld(scale, 8)) {
+      addDockRailArc(instance, frame, x, rail, faceSign, trackMat, railW, railT);
+    }
+    if (horizontalLen > mmToWorld(scale, 8)) {
+      addDoorBox(
+        instance,
+        frame,
+        trackMat,
+        railW,
+        railT,
+        horizontalLen,
+        x,
+        horizontalY,
+        faceSign * (horizontalStart + horizontalLen / 2)
+      );
+    }
+    const gapAboveRail = ceilingKnown
+      ? ceilingInnerLocal - (horizontalY + railT / 2)
+      : 0;
     const hangerSpan = Math.min(mmToWorld(scale, 48), Math.max(0, gapAboveRail));
     const hangerStep = mmToWorld(scale, 900);
-    if (hangerSpan > mmToWorld(scale, 18)) {
+    if (horizontalLen > hangerStep && hangerSpan > mmToWorld(scale, 18)) {
       for (let face = horizontalStart + hangerStep; face < horizontalStart + horizontalLen - mmToWorld(scale, 80); face += hangerStep) {
         addDoorBox(
           instance,
@@ -2905,7 +2974,7 @@ function createSectionalDockAssembly(instance, {
       }
     }
     const braceDrop = Math.min(mmToWorld(scale, 40), radius * 0.35);
-    if (radius - braceDrop > mmToWorld(scale, 20)) {
+    if (radius - braceDrop > mmToWorld(scale, 20) && horizontalLen > mmToWorld(scale, 80)) {
       const braceFace = Math.min(horizontalLen * 0.28, mmToWorld(scale, 700));
       const braceLen = Math.hypot(radius - braceDrop, braceFace);
       const brace = addDoorBox(
@@ -2916,7 +2985,7 @@ function createSectionalDockAssembly(instance, {
         braceLen,
         mmToWorld(scale, 18),
         x,
-        yTop + (radius + braceDrop) / 2,
+        yTop + lift + (radius + braceDrop) / 2,
         faceSign * (braceFace / 2)
       );
       brace.rotation.x = Math.atan2(faceSign * braceFace, radius - braceDrop);
@@ -3958,15 +4027,15 @@ export function createDoorMesh(instance, door, wall) {
     const doorContainer = new instance.THREE.Object3D();
     doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);
     doorContainer.rotation.y = -wallAngle;
-    let wallTopLocal = null;
-    if (wallData) {
-      const wallHeightMm = wallData.fill_gap_mode && wallData.gap_fill_height != null
-        ? Number(wallData.gap_fill_height)
-        : Number(wallData.height);
-      if (Number.isFinite(wallHeightMm) && wallHeightMm > 0) {
-        wallTopLocal = doorBaseElevation + wallHeightMm * scale - doorYPosition;
-      }
-    }
+    const ceilingInnerLocal = dockCeilingInnerLocal(
+      room,
+      wallData,
+      instance.project?.rooms || [],
+      doorBaseElevation,
+      doorYPosition,
+      doorHeight,
+      scale
+    );
     const { frame, leaf } = createSectionalDockAssembly(instance, {
       door,
       cutoutWidth,
@@ -3975,7 +4044,7 @@ export function createDoorMesh(instance, door, wall) {
       wallDepth,
       adjustedSide,
       scale,
-      wallTopLocal,
+      ceilingInnerLocal,
     });
     doorContainer.add(frame);
     doorContainer.add(leaf);

@@ -36,6 +36,10 @@ const TOUR = {
   PLAY_MARGIN_MIN: 100,
   WALL_SAMPLE_OFFSET_MM: 250,
   DOOR_INTERACT_MAX_DIST_MM: 2800,
+  // Hide dock doors past this distance while walking. The site is large;
+  // drawing every door through the walls is what makes the tour stall.
+  DOOR_DRAW_SHOW_MM: 45000,
+  DOOR_DRAW_HIDE_MM: 60000,
 };
 
 function clamp(value, min, max) {
@@ -602,6 +606,7 @@ export default class RoomTourController {
 
     const panelMeshes = [];
     doors.forEach((door) => {
+      if (!door.visible) return;
       door.traverse((child) => {
         if (child.isMesh && child.visible) {
           panelMeshes.push(child);
@@ -1187,6 +1192,7 @@ export default class RoomTourController {
     document.body.style.cursor = 'default';
 
     this.instance.tourRoomLabels?.setActive(false);
+    this.restoreTourDoors();
 
     if (typeof this.instance.setCeilingsVisible === 'function') {
       this.instance.setCeilingsVisible(true);
@@ -1204,12 +1210,42 @@ export default class RoomTourController {
     }
   }
 
+  restoreTourDoors() {
+    const doors = this.instance?.doorObjects || [];
+    for (let i = 0; i < doors.length; i += 1) {
+      doors[i].visible = true;
+      if (doors[i].userData) doors[i].userData._tourDoorShown = true;
+    }
+  }
+
+  updateTourDoorDistance() {
+    const scale = this.instance.scalingFactor || 0.01;
+    const show = TOUR.DOOR_DRAW_SHOW_MM * scale;
+    const hide = TOUR.DOOR_DRAW_HIDE_MM * scale;
+    const showSq = show * show;
+    const hideSq = hide * hide;
+    const px = this.player.x;
+    const pz = this.player.z;
+    const doors = this.instance.doorObjects || [];
+    for (let i = 0; i < doors.length; i += 1) {
+      const door = doors[i];
+      const dx = door.position.x - px;
+      const dz = door.position.z - pz;
+      const distSq = dx * dx + dz * dz;
+      const shown = door.userData?._tourDoorShown !== false;
+      const next = shown ? distSq <= hideSq : distSq <= showSq;
+      if (door.visible !== next) door.visible = next;
+      if (door.userData) door.userData._tourDoorShown = next;
+    }
+  }
+
   update() {
     if (!this.active) {
       return;
     }
 
     this.instance.animationManager?.killCameraAnimations?.();
+    this.updateTourDoorDistance();
 
     const now = performance.now();
     const delta = Math.min((now - this.lastFrameTime) / 1000, 0.05);
