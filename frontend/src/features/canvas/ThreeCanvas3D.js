@@ -134,6 +134,8 @@ export default class ThreeCanvas3D {
     );
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
+      // Keep the frame so screenshot and video capture can read the canvas.
+      preserveDrawingBuffer: true,
       logarithmicDepthBuffer: THREE_CONFIG.RENDERER.LOG_DEPTH_BUFFER,
       powerPreference: 'high-performance',
     });

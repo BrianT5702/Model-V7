@@ -91,6 +91,36 @@ code {
   height: 100%;
 }
 
+.three-canvas-view.is-guest-view canvas {
+  -webkit-user-select: none;
+  user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.three-canvas-stage.is-screenshot-blocked canvas {
+  visibility: hidden !important;
+}
+
+.three-screenshot-block {
+  position: absolute;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 600;
+  color: #111827;
+  background: #f8fafc;
+}
+
+.dark .three-screenshot-block {
+  color: #f9fafb;
+  background: #111827;
+}
+
 .three-build-overlay {
   position: absolute;
   inset: 0;

@@ -16,6 +16,8 @@ import {
     folderKeyFromQueryValue,
 } from './projectFolderUtils';
 import Canvas2D from '../canvas/Canvas2D';
+import useBlock3DScreenshot from '../canvas/useBlock3DScreenshot';
+import ThreeCaptureControls from '../canvas/ThreeCaptureControls';
 import RoomManager from '../room/RoomManager';
 import DoorManager from '../door/DoorManager';
 import DoorEditorModal from '../door/DoorEditorModal';
@@ -125,6 +127,9 @@ const ProjectDetails = ({ shareProjectId = null, onShareBack = null, shareBackLa
     const [levelActionsMenuOpen, setLevelActionsMenuOpen] = useState(false);
     const canvasPanelScrollRef = useRef(null);
     const threeCanvasViewRef = useRef(null);
+    const captureControlsRef = useRef(null);
+    const guest3DView = projectDetails.is3DView && !isAuthenticated;
+    const screenshotBlocked = useBlock3DScreenshot(threeCanvasViewRef, guest3DView);
     const [is3DFullscreen, setIs3DFullscreen] = useState(false);
     const [is3DPseudoFullscreen, setIs3DPseudoFullscreen] = useState(false);
     const [isPlanFullscreen, setIsPlanFullscreen] = useState(false);
@@ -472,6 +477,10 @@ const ProjectDetails = ({ shareProjectId = null, onShareBack = null, shareBackLa
     }, [projectDetails]);
 
     const handleToggle3DView = useCallback(() => {
+        if (projectDetails.is3DView && captureControlsRef.current?.isBusy?.()) {
+            captureControlsRef.current.finish();
+            return;
+        }
         setIsPlanFullscreen(false);
         if (projectDetails.is3DView) {
             projectDetails.forceCleanup3D();
@@ -2825,7 +2834,7 @@ const ProjectDetails = ({ shareProjectId = null, onShareBack = null, shareBackLa
                         {projectDetails.is3DView ? (
                             <div
                                 ref={threeCanvasViewRef}
-                                className={`three-canvas-view flex flex-col flex-1 min-h-0${is3DFullscreen ? ' is-fullscreen' : ''}`}
+                                className={`three-canvas-view flex flex-col flex-1 min-h-0${is3DFullscreen ? ' is-fullscreen' : ''}${guest3DView ? ' is-guest-view' : ''}`}
                             >
                                 {/* Tab Navigation - Same structure as 2D */}
                                 <div className="px-3 sm:px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800 transition-colors shrink-0">
@@ -2895,6 +2904,14 @@ const ProjectDetails = ({ shareProjectId = null, onShareBack = null, shareBackLa
                                                 </span>
                                                 <span className="sm:hidden">{is3DFullscreen ? 'Exit' : 'Full'}</span>
                                             </button>
+                                            <ThreeCaptureControls
+                                                ref={captureControlsRef}
+                                                getCanvas={() => projectDetails.threeCanvasInstance?.current}
+                                                viewRootRef={threeCanvasViewRef}
+                                                projectName={projectDetails.project?.name}
+                                                canRecord={isAuthenticated}
+                                                disabled={projectDetails.is3DBuilding}
+                                            />
                                         </div>
                                         <div className="text-[11px] sm:text-xs text-gray-600 dark:text-gray-400 leading-tight">
                                             <span className="font-medium">View:</span>{' '}
@@ -2919,6 +2936,11 @@ const ProjectDetails = ({ shareProjectId = null, onShareBack = null, shareBackLa
                                         id="three-canvas-container"
                                         className="bg-gray-50 dark:bg-gray-800 active overflow-hidden transition-colors"
                                     />
+                                    {screenshotBlocked && (
+                                        <div className="three-screenshot-block" role="status">
+                                            Screen capture is turned off. Use Screenshot to save a watermarked image.
+                                        </div>
+                                    )}
                                     {projectDetails.is3DBuilding && (
                                         <div className="three-build-overlay" role="status" aria-live="polite">
                                             <div className="three-build-card">

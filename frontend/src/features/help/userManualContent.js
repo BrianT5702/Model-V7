@@ -554,10 +554,10 @@ export const MANUAL_SECTIONS = [
         id: '3d',
         group: 'views',
         title: '3D view and tour',
-        keywords: '3d interior exterior tour wasd space alt shift door fullscreen orbit pinch joystick',
+        keywords: '3d interior exterior tour wasd space alt shift door fullscreen orbit pinch joystick screenshot record video watermark',
         blocks: [
             { type: 'p', text: 'Click **3D View** in the header. Plan tabs hide until you click **2D View**. Wall faces use a micro-ribbed panel finish, and panel joints are thin seams: from far away both read as smooth off-white, and they show when you zoom in or walk up in **Tour**. Sliding doors show an aluminium edge frame, a top track, and a pull handle. Door and wall windows are thin glass set in the middle of the panel, not as thick as the insulated leaf.' },
-            { type: 'img', src: '/manual/08-3d-view.png', alt: '3D view toolbar', caption: 'Interior / Exterior, **Tour**, panel lines, and **Fullscreen** sit above the model.' },
+            { type: 'img', src: '/manual/08-3d-view.png', alt: '3D view toolbar', caption: 'Interior / Exterior, **Tour**, panel lines, **Fullscreen**, **Screenshot**, and **Record** sit above the model.' },
             { type: 'h3', text: 'Orbit' },
             { type: 'steps', items: [
                 'Click **3D View** and wait for the model.',
@@ -566,6 +566,8 @@ export const MANUAL_SECTIONS = [
                 'Click **Hide Panel Lines** to hide wall seams.',
                 'Click a door, then **Open Door** or **Close Door** (or Space).',
                 'Click **Fullscreen** to enlarge. Esc leaves it.',
+                'Click **Screenshot** to capture the current view. A watermark is added, then you can save the image. This works without an account.',
+                'Signed-in users can click **Record**. After a short preparation, orbit or walk while it records. Click **Stop**, then save the video. It includes the same watermark.',
             ] },
             { type: 'h3', text: 'Start a tour' },
             { type: 'steps', items: [

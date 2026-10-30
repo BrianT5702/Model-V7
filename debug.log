@@ -348735,3 +348735,22 @@ INFO 2026-10-30 12:18:49,542 autoreload 25576 27924 C:\Users\brian\OneDrive\Desk
 INFO 2026-10-30 12:18:50,498 autoreload 29596 4784 Watching for file changes with StatReloader
 INFO 2026-10-30 12:19:01,829 services 11612 35096 Ceiling generation complete: 11 panels across 2 rooms
 INFO 2026-10-30 12:19:01,889 services 11612 35096 Ceiling plan generated for project 1: 11 panels, strategy=mixed
+WARNING 2026-10-30 14:24:02,539 log 29596 34296 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:24:17,920 log 29596 29288 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:24:28,952 log 29596 35552 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:45:02,314 log 29596 35216 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:45:03,740 log 29596 29764 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:45:07,714 log 29596 37220 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:45:09,413 log 29596 31660 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:50:29,383 log 29596 7744 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:50:33,062 log 29596 31596 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:50:34,922 log 29596 29716 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:50:38,604 log 29596 31072 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:53:38,294 log 29596 33148 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 14:53:44,704 log 29596 37108 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 15:06:13,302 log 29596 19452 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 15:06:13,547 log 29596 24556 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 15:06:15,154 log 29596 29264 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 15:45:41,249 log 29596 39052 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 15:48:17,009 log 29596 40064 Forbidden: /api/projects/416/open-layout/
+WARNING 2026-10-30 16:15:06,474 log 29596 37984 Forbidden: /api/projects/416/open-layout/
