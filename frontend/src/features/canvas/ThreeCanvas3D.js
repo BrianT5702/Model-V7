@@ -132,10 +132,12 @@ export default class ThreeCanvas3D {
       THREE_CONFIG.CAMERA.NEAR,
       THREE_CONFIG.CAMERA.FAR
     );
-    // Renderer with balanced quality settings
+    this._heavyModel = (walls?.length || 0) >= 40;
+    // A large model skips multisampling and logarithmic depth. Those two
+    // settings make every orbit frame fill the screen several times over.
     this.renderer = new THREE.WebGLRenderer({
-      antialias: true,
-      logarithmicDepthBuffer: THREE_CONFIG.RENDERER.LOG_DEPTH_BUFFER,
+      antialias: !this._heavyModel,
+      logarithmicDepthBuffer: this._heavyModel ? false : THREE_CONFIG.RENDERER.LOG_DEPTH_BUFFER,
       powerPreference: 'high-performance',
     });
     this.walls = walls;
@@ -226,10 +228,45 @@ export default class ThreeCanvas3D {
 
   /** Internal canvas scale: higher = sharper lines when zoomed out (see THREE_CONFIG.RENDERER). */
   getEffectivePixelRatio() {
+    if (this._heavyModel) return 1;
     const dpr = typeof window !== 'undefined' ? (window.devicePixelRatio || 1) : 1;
     const max = THREE_CONFIG.RENDERER.MAX_PIXEL_RATIO;
     const bias = THREE_CONFIG.RENDERER.QUALITY_BIAS;
     return Math.max(1, Math.min(dpr * bias, max));
+  }
+
+  /**
+   * While the camera is moving, draw the solid building only.
+   * Edge and panel lines are the expensive part of a large orbit.
+   */
+  applyInteractiveQuality(moving) {
+    const hideLines = Boolean(moving);
+    if (this._linesHidden !== hideLines) {
+      this._linesHidden = hideLines;
+      if (hideLines) {
+        this._savedLineVisibility = [];
+        this.scene.traverse((obj) => {
+          if (!obj.isLine2 && !obj.isLineSegments2) return;
+          this._savedLineVisibility.push(obj, obj.visible);
+          obj.visible = false;
+        });
+      } else if (this._savedLineVisibility) {
+        const saved = this._savedLineVisibility;
+        for (let i = 0; i < saved.length; i += 2) {
+          saved[i].visible = saved[i + 1];
+        }
+        this._savedLineVisibility = null;
+      }
+    }
+
+    if (this._heavyModel) return;
+    const ratio = moving ? 1 : this.getEffectivePixelRatio();
+    if (Math.abs(this.renderer.getPixelRatio() - ratio) < 0.01) return;
+    this.renderer.setPixelRatio(ratio);
+    const width = this.container?.clientWidth || 1;
+    const height = this.container?.clientHeight || 1;
+    this.renderer.setSize(width, height);
+    syncLineMaterialResolution(width, height, ratio);
   }
 
   init() {
@@ -309,6 +346,11 @@ export default class ThreeCanvas3D {
       THREE_CONFIG.CAMERA.DEFAULT_POSITION.z
     );
     this.camera.lookAt(0, 0, 0);
+    if (this._heavyModel) {
+      this.camera.near = 1;
+      this.camera.far = 4000;
+      this.camera.updateProjectionMatrix();
+    }
   
     addStudioEnvironment(this);
     addGrid(this);
@@ -734,6 +776,23 @@ getModelBounds() {
   }  
 
   // Draw only while the camera, a door, or the tour is moving.
+  scheduleDeferredPanelLines() {
+    if (this._disposed || !this._panelLinesDeferred) return;
+    if (this._orbitDragging || this._linesHidden) {
+      requestAnimationFrame(() => this.scheduleDeferredPanelLines());
+      return;
+    }
+    this._panelLinesDeferred = false;
+    if (this.showPanelLines && this.panelLines.length === 0) {
+      this.createPanelDivisionLines();
+    }
+    if (this.showCeilingPanelLines && this.ceilingPanelLines.length === 0) {
+      this.createCeilingPanelDivisionLines();
+    }
+    this.consolidateSceneFatLines();
+    this._renderRequested = true;
+  }
+
   animate() {
     if (this._disposed) {
       return;
@@ -752,11 +811,14 @@ getModelBounds() {
       cameraMoved = this.controls.update() === true;
     }
     const tweening = typeof window !== 'undefined' && window.gsap?.globalTimeline?.isActive?.();
-    const busy = cameraMoved
+    const moving = Boolean(
+      this._orbitDragging
+      || cameraMoved
       || this._viewTransitionActive
-      || this.isTourEngaged()
-      || tweening
-      || this._renderRequested;
+      || this.roomTourController?.isWalking?.()
+    );
+    this.applyInteractiveQuality(moving);
+    const busy = moving || tweening || this._renderRequested;
     if (!busy) {
       return;
     }
@@ -849,6 +911,7 @@ getModelBounds() {
 
   // Method to rebuild the model
   buildModel() {
+    this._heavyModel = (this.walls?.length || 0) >= 40;
     this._modelCenterCache = null;
     this._renderRequested = true;
     try {
@@ -911,13 +974,15 @@ getModelBounds() {
       // Add floor after ceilings are created
       this.addRoomSpecificFloors();
       
-      // Create panel division lines only if they're enabled
-      if (this.showPanelLines) {
+      // Panel seams are built after the first still frame on a large model,
+      // so opening the view and orbiting are not waiting on every joint line.
+      if (this._heavyModel) {
+        this._panelLinesDeferred = true;
+      } else if (this.showPanelLines) {
         this.createPanelDivisionLines();
       }
       
-      // Create ceiling panel division lines only if they're enabled
-      if (this.showCeilingPanelLines) {
+      if (!this._heavyModel && this.showCeilingPanelLines) {
         this.createCeilingPanelDivisionLines();
       }
       
@@ -935,6 +1000,9 @@ getModelBounds() {
       }
       if (this.tourRoomLabels?.active) {
         this.tourRoomLabels.rebuild();
+      }
+      if (this._panelLinesDeferred) {
+        this.scheduleDeferredPanelLines();
       }
     } catch (error) {
       console.error('Error building model:', error);
