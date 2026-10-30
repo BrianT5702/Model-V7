@@ -1,7 +1,10 @@
+import { isCurtainDoorType } from './doorSchedule';
+
 const DOOR_TYPE_SORT_ORDER = {
     swing: 0,
     slide: 1,
     dock: 2,
+    sectional: 3,
 };
 
 const DOOR_OPENING_SORT_ORDER = {
@@ -26,8 +29,8 @@ export function sortDoorsForMaterialList(doors) {
             return typeA - typeB;
         }
 
-        // Dock has no Single/Double — keep them together after typed openings
-        if (a?.door_type === 'dock' && b?.door_type === 'dock') {
+        // Curtain doors have no Single/Double — keep each family together by size
+        if (isCurtainDoorType(a?.door_type) && a?.door_type === b?.door_type) {
             const widthDiff = (Number(a?.width) || 0) - (Number(b?.width) || 0);
             if (widthDiff !== 0) return widthDiff;
             return (Number(a?.height) || 0) - (Number(b?.height) || 0);

@@ -411,13 +411,10 @@ const CreateProject = ({
                             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
                                 <div>
                                     <p className="text-sm font-medium text-gray-700">
-                                        Import from DWG / PDF
-                                        <span className="ml-2 align-middle text-[10px] font-semibold uppercase tracking-wide text-amber-800 bg-amber-100 border border-amber-200 rounded px-1.5 py-0.5">
-                                            In development
-                                        </span>
+                                        Import from DWG / DXF / PDF
                                     </p>
                                     <p className="text-xs text-gray-600 mt-0.5">
-                                        Prefer DWG/DXF for accurate wall layers. PDF still works for older sheets.
+                                        DWG and DXF are drawn from the wall layers. PDF still works for older sheets.
                                         Enter the project name above, then choose the file.
                                     </p>
                                     <label className="mt-2 inline-flex items-center gap-2 text-xs text-gray-700">

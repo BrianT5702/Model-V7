@@ -93,14 +93,14 @@ export function getWallRunGeometry(instance, wall) {
 
 export function getDoorCutoutWidth(door, scale) {
   const isSlideDoor = door.door_type === 'slide';
-  const isDockDoor = door.door_type === 'dock';
+  const isCurtainDoor = door.door_type === 'dock' || door.door_type === 'sectional';
   const isDoubleSidedSlide = isSlideDoor && door.configuration === 'double_sided';
   const doorWidth = Number(door.width) * scale;
   if (!Number.isFinite(doorWidth) || doorWidth <= 0) {
     return 900 * scale * 1.05;
   }
   return doorWidth * (
-    isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05
+    isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isCurtainDoor ? 1.0 : 1.05
   );
 }
 

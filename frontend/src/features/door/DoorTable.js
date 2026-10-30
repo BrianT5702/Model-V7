@@ -13,7 +13,7 @@ const DoorTable = ({ doors }) => {
     return (
         <div className="w-full">
             <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">
-                SW swing, SD sliding, DS dock. Double swing is DSW and double sliding is DSD. Doors of the same configuration share one row, written SW1-1, SW1-2 - SW1-6.
+                SW swing, SD sliding, DS dock, SC sectional. Double swing is DSW and double sliding is DSD. Doors of the same configuration share one row, written SW1-1, SW1-2 - SW1-6.
             </p>
             <div className="overflow-x-auto">
                 <table className="min-w-full bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-600 text-[11px] leading-tight">

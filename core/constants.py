@@ -28,6 +28,7 @@ DOOR_TYPES = [
     ('swing', 'Swing Door'),
     ('slide', 'Slide Door'),
     ('dock', 'Dock Door'),
+    ('sectional', 'Sectional Door'),
 ]
 
 # Door Configurations

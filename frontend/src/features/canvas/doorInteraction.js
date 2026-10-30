@@ -140,7 +140,7 @@ export function animateDoorToState(instance, doorContainer, doorInfo, open) {
     return;
   }
 
-  if (doorInfo.door_type === 'dock') {
+  if (doorInfo.door_type === 'dock' || doorInfo.door_type === 'sectional') {
     const coverPanel = doorInfo.coverPanel
       || doorContainer.children.find((child) => child.userData?.isCoverPanel);
     if (!coverPanel) {

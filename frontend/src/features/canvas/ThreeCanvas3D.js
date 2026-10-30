@@ -2903,12 +2903,14 @@ getModelBounds() {
         // Calculate cutouts in UNSCALED space to match divisionPosition
         const cutouts = wallDoors.map(door => {
           const isSlideDoor = (door.door_type === 'slide');
+          const isCurtainDoor = door.door_type === 'dock' || door.door_type === 'sectional';
           const doorWidth = door.width; // Keep unscaled (mm)
           // For double-sided slide doors, use full door width (both panels need to fit)
           // For single slide doors, use 95% (slight gap for sliding)
+          // For dock and sectional doors, use 100% (exact fit)
           // For swing doors, use 105% (slight overlap for door swing)
           const isDoubleSidedSlide = isSlideDoor && door.configuration === 'double_sided';
-          const cutoutWidth = doorWidth * (isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : 1.05); // cutout width in mm (unscaled)
+          const cutoutWidth = doorWidth * (isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isCurtainDoor ? 1.0 : 1.05); // cutout width in mm (unscaled)
           const doorHeight = door.height * scale * 1.02; // Store height in scaled space
           
           // If wall was flipped, flip the door position

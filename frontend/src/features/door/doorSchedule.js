@@ -2,16 +2,22 @@ const DOOR_FAMILIES = {
     swing: { code: 'SW', label: 'Swing' },
     slide: { code: 'SD', label: 'Sliding' },
     dock: { code: 'DS', label: 'Dock' },
+    sectional: { code: 'SC', label: 'Sectional' },
 };
 
-const FAMILY_ORDER = ['swing', 'slide', 'dock'];
+const FAMILY_ORDER = ['swing', 'slide', 'dock', 'sectional'];
+
+/** Dock and sectional doors are one curtain. They have no single/double opening. */
+export function isCurtainDoorType(type) {
+    return type === 'dock' || type === 'sectional';
+}
 
 export function isDoubleConfiguration(configuration) {
     return String(configuration || '').toLowerCase().includes('double');
 }
 
 export function openingLabel(door) {
-    if (!door || door.door_type === 'dock') return '—';
+    if (!door || isCurtainDoorType(door.door_type)) return '—';
     return isDoubleConfiguration(door.configuration) ? 'Double' : 'Single';
 }
 
@@ -24,8 +30,8 @@ export function doorConfigurationKey(door) {
     const width = Math.round(Number(door?.width) || 0);
     const height = Math.round(Number(door?.height) || 0);
     const thickness = Math.round(Number(door?.thickness) || 0);
-    if (type === 'dock') {
-        return `dock|${width}|${height}|${thickness}`;
+    if (isCurtainDoorType(type)) {
+        return `${type}|${width}|${height}|${thickness}`;
     }
     const opening = isDoubleConfiguration(door?.configuration) ? 'double' : 'single';
     return `${type}|${opening}|${width}|${height}|${thickness}`;
@@ -42,7 +48,7 @@ function familyOf(door) {
 
 /** Hue for a door type so different configurations read as different colors. */
 export function doorMarkColor(typeNumber, family) {
-    const familyShift = family === 'slide' ? 28 : family === 'dock' ? 56 : 0;
+    const familyShift = family === 'slide' ? 28 : family === 'dock' ? 56 : family === 'sectional' ? 84 : 0;
     const hue = Math.round((familyShift + (Math.max(1, typeNumber) - 1) * 47) % 360);
     return `hsl(${hue}, 72%, 38%)`;
 }
@@ -86,7 +92,7 @@ export function buildDoorSchedule(doors) {
         const doubleKeys = [];
         for (const key of groups.keys()) {
             const sample = groups.get(key)[0];
-            if (family !== 'dock' && isDoubleConfiguration(sample.configuration)) {
+            if (!isCurtainDoorType(family) && isDoubleConfiguration(sample.configuration)) {
                 doubleKeys.push(key);
             } else {
                 singleKeys.push(key);
@@ -105,7 +111,7 @@ export function buildDoorSchedule(doors) {
                 const code = `${prefix}${typeNumber}`;
                 const members = [...groups.get(key)].sort((a, b) => doorIdNumber(a) - doorIdNumber(b));
                 const sample = members[0];
-                const opening = family === 'dock' ? null : (isDoubleConfiguration(sample.configuration) ? 'double' : 'single');
+                const opening = isCurtainDoorType(family) ? null : (isDoubleConfiguration(sample.configuration) ? 'double' : 'single');
                 const color = doorMarkColor(typeNumber + (opening === 'double' ? 5 : 0), family);
                 const typeEntry = {
                     code,

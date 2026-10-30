@@ -1344,14 +1344,14 @@ export function createWallMesh(instance, wall) {
   wallDoors.sort((a, b) => a.position_x - b.position_x);
   const cutouts = wallDoors.map(door => {
     const isSlideDoor = (door.door_type === 'slide');
-    const isDockDoor = (door.door_type === 'dock');
+    const isCurtainDoor = door.door_type === 'dock' || door.door_type === 'sectional';
     const isDoubleSidedSlide = isSlideDoor && door.configuration === 'double_sided';
     const doorWidth = door.width * scale;
     // For double-sided slide doors, use full door width (both panels need to fit)
     // For single slide doors, use 95% (slight gap for sliding)
-    // For dock doors, use 100% (exact fit)
+    // For dock and sectional doors, use 100% (exact fit)
     // For swing doors, use 105% (slight overlap for door swing)
-    const cutoutWidth = doorWidth * (isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05);
+    const cutoutWidth = doorWidth * (isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isCurtainDoor ? 1.0 : 1.05);
     const doorHeight = door.height * scale * 1.02;
     
     // Get floor thickness to raise the cutout (matching door mesh positioning)
@@ -3528,12 +3528,12 @@ export function createDoorMesh(instance, door, wall) {
   // Calculate door width to match cutout width calculation in createWallMesh
   // For double-sided slide doors: use 100% (1.0) to match cutout
   // For single slide doors: use 95% (0.95) to match cutout
-  // For dock doors: use 100% (1.0) to match cutout
+  // For dock and sectional doors: use 100% (1.0) to match cutout
   // For swing doors: use 105% (1.05) to match cutout
   const isSlideDoor = (door_type === 'slide');
-  const isDockDoor = (door_type === 'dock');
+  const isCurtainDoor = door_type === 'dock' || door_type === 'sectional';
   const isDoubleSidedSlide = isSlideDoor && configuration === 'double_sided';
-  const doorWidthMultiplier = isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isDockDoor ? 1.0 : 1.05;
+  const doorWidthMultiplier = isDoubleSidedSlide ? 1.0 : isSlideDoor ? 0.95 : isCurtainDoor ? 1.0 : 1.05;
   const doorWidth = width * scale * doorWidthMultiplier;
   const doorThickness = thickness * instance.scalingFactor;
   const doorMaterial = createDoorLeafMaterial(instance.THREE, instance.renderer, {
@@ -3952,8 +3952,8 @@ export function createDoorMesh(instance, door, wall) {
       return doorContainer;
     }
   }
-  // === DOCK DOOR IMPLEMENTATION ===
-  else if (door_type === 'dock') {
+  // === DOCK / SECTIONAL DOOR IMPLEMENTATION ===
+  else if (door_type === 'dock' || door_type === 'sectional') {
     // Sectional curtain in the wall opening. Tracks stay put; the leaf rolls up.
     const doorContainer = new instance.THREE.Object3D();
     doorContainer.position.set(doorPosX, doorYPosition, doorPosZ);

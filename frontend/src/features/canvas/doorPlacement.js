@@ -17,11 +17,9 @@ export function resolveDoorPlacement(wall, door) {
     const wallLength = Math.hypot(wallDx, wallDy) || 1;
     const doorWidth = Number(door.width) || 0;
     const slashLength =
-        door.door_type === 'swing'
+        door.door_type === 'swing' || door.door_type === 'dock' || door.door_type === 'sectional'
             ? doorWidth
-            : door.door_type === 'dock'
-              ? doorWidth
-              : doorWidth * 0.85;
+            : doorWidth * 0.85;
 
     // Keep the full door opening on the wall (half opening width + small end gap)
     const halfWidthRatio = doorWidth > 0 ? doorWidth / 2 / wallLength : 0;
@@ -79,6 +77,51 @@ export function resolveDoorPlacement(wall, door) {
         slashLength,
         slashHalf: door.door_type !== 'dock' ? slashLength / 2 : 0,
         isInterior,
+    };
+}
+
+/**
+ * Sectional door plan symbol, in door-local millimetres.
+ * The leaf is the full opening wide and hangs off the install face.
+ * Cyan header brackets sit on the wall-side corners; green rollers sit on the free corners.
+ */
+export function getSectionalPlanSymbol(door, isInterior) {
+    const width = Math.max(0, Number(door?.width) || 0);
+    const depth = Math.max(200, Math.min(width * 0.32, 480));
+    const bracket = Math.max(64, Math.min(depth * 0.34, 120));
+    const rollerR = bracket * 0.48;
+    const yFree = isInterior ? depth : -depth;
+    const intoWall = isInterior ? -1 : 1;
+    const freeShift = isInterior ? 1 : -1;
+    const left = -width / 2;
+    const right = width / 2;
+    const brackets = [-1, 1].map((outward) => {
+        const cx = (outward < 0 ? left : right) + outward * bracket * 0.12;
+        const cy = intoWall * bracket * 0.12;
+        return { cx, cy, size: bracket };
+    });
+    const rollers = [-1, 1].map((outward) => {
+        const cx = (outward < 0 ? left : right) + outward * rollerR * 0.2;
+        const cy = yFree + freeShift * rollerR * 0.2;
+        return { cx, cy, r: rollerR };
+    });
+    const pad = Math.max(bracket, rollerR) * 0.65;
+    return {
+        width,
+        depth,
+        bracket,
+        rollerR,
+        left,
+        right,
+        yWall: 0,
+        yFree,
+        brackets,
+        rollers,
+        hit: {
+            halfX: width / 2 + pad,
+            minY: Math.min(0, yFree) - pad,
+            maxY: Math.max(0, yFree) + pad,
+        },
     };
 }
 
@@ -225,6 +268,29 @@ function collectDoorSymbolPoints(door, wall, placement) {
         points.push(
             { x: dockTag.x - DOOR_TAG_RADIUS_MM, y: dockTag.y - DOOR_TAG_RADIUS_MM },
             { x: dockTag.x + DOOR_TAG_RADIUS_MM, y: dockTag.y + DOOR_TAG_RADIUS_MM }
+        );
+        return points;
+    }
+
+    if (door.door_type === 'sectional') {
+        const sym = getSectionalPlanSymbol(door, isInterior);
+        addLocal(sym.left, sym.yWall);
+        addLocal(sym.right, sym.yWall);
+        addLocal(sym.right, sym.yFree);
+        addLocal(sym.left, sym.yFree);
+        sym.brackets.forEach((item) => {
+            const half = item.size / 2;
+            addLocal(item.cx - half, item.cy - half);
+            addLocal(item.cx + half, item.cy + half);
+        });
+        sym.rollers.forEach((item) => {
+            addLocal(item.cx - item.r, item.cy - item.r);
+            addLocal(item.cx + item.r, item.cy + item.r);
+        });
+        const tag = getDoorTagModelPoint(door, wall, placement);
+        points.push(
+            { x: tag.x - DOOR_TAG_RADIUS_MM, y: tag.y - DOOR_TAG_RADIUS_MM },
+            { x: tag.x + DOOR_TAG_RADIUS_MM, y: tag.y + DOOR_TAG_RADIUS_MM }
         );
         return points;
     }

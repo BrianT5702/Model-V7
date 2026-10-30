@@ -1,6 +1,6 @@
 // Utility functions extracted from Canvas2D.js
 
-import { resolveDoorPlacement, worldToDoorLocal, getSlidePanelYOffset, getDoorTagModelPoint, DOOR_TAG_RADIUS_MM } from './doorPlacement.js';
+import { resolveDoorPlacement, worldToDoorLocal, getSlidePanelYOffset, getSectionalPlanSymbol, getDoorTagModelPoint, DOOR_TAG_RADIUS_MM } from './doorPlacement.js';
 import { buildDoorSchedule, doorMarkColor, isDoubleConfiguration } from '../door/doorSchedule';
 import { adjustPlanStrokeColor } from './planCanvasTheme';
 
@@ -256,6 +256,11 @@ export function detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY) {
       if (Math.abs(localX) <= dockDoorWidth / 2 && localY >= minY && localY <= maxY) {
         return door;
       }
+    } else if (door.door_type === 'sectional') {
+      const hit = getSectionalPlanSymbol(door, isInterior).hit;
+      if (Math.abs(localX) <= hit.halfX && localY >= hit.minY && localY <= hit.maxY) {
+        return door;
+      }
     } else if (Math.abs(localX) <= halfW && Math.abs(localY) <= halfT) {
       return door;
     }
@@ -337,6 +342,36 @@ export function detectHoveredDoor(x, y, doors, walls, scale, offsetX, offsetY) {
   return detectClickedDoor(x, y, doors, walls, scale, offsetX, offsetY);
 }
 
+function drawSectionalPlanSymbol(ctx, door, isInterior, scale, hovered) {
+    const sym = getSectionalPlanSymbol(door, isInterior);
+    const x0 = sym.left * scale;
+    const y0 = Math.min(sym.yWall, sym.yFree) * scale;
+    ctx.save();
+    ctx.lineJoin = 'miter';
+    ctx.strokeStyle = hovered ? '#0066FF' : adjustPlanStrokeColor('#1d4ed8');
+    ctx.lineWidth = hovered ? 3 : 2.4;
+    ctx.strokeRect(x0, y0, sym.width * scale, sym.depth * scale);
+
+    ctx.fillStyle = '#22d3ee';
+    ctx.strokeStyle = '#0891b2';
+    ctx.lineWidth = 1;
+    sym.brackets.forEach((item) => {
+        const size = item.size * scale;
+        ctx.fillRect(item.cx * scale - size / 2, item.cy * scale - size / 2, size, size);
+        ctx.strokeRect(item.cx * scale - size / 2, item.cy * scale - size / 2, size, size);
+    });
+
+    ctx.fillStyle = '#22c55e';
+    ctx.strokeStyle = '#15803d';
+    sym.rollers.forEach((item) => {
+        ctx.beginPath();
+        ctx.arc(item.cx * scale, item.cy * scale, item.r * scale, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+    });
+    ctx.restore();
+}
+
 function drawUprightDoorTag(ctx, x, y, radius, mark) {
     if (!(radius > 0.5)) return;
     const stroke = adjustPlanStrokeColor('#111111');
@@ -393,8 +428,8 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
         ctx.rotate(angle);
         ctx.scale(1, ySign);
 
-        // === Slashed Wall Section === (skip for dock doors)
-        if (door.door_type !== 'dock') {
+        // === Slashed Wall Section === (skip for dock and sectional doors)
+        if (door.door_type !== 'dock' && door.door_type !== 'sectional') {
             const slashStart = { x: -slashHalf, y: 0 };
             const slashEnd = { x: slashHalf, y: 0 };
             const numSlashes = Math.max(2, Math.floor((doorWidth * scale) / 10));
@@ -576,6 +611,10 @@ export function drawDoors(ctx, doors, walls, scale, offsetX, offsetY, hoveredDoo
             const textY = isInterior ? rectH - 10 : rectY + 10;
             ctx.fillText('DL', textX, textY);
             ctx.restore();
+        }
+
+        if (door.door_type === 'sectional') {
+            drawSectionalPlanSymbol(ctx, door, isInterior, scale, isHovered);
         }
 
         ctx.restore();

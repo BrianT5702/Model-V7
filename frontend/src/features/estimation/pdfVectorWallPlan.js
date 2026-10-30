@@ -17,12 +17,58 @@ import {
 } from '../canvas/drawing';
 import { planCeilingValueDedupKey, DIMENSION_CONFIG } from '../canvas/DimensionConfig';
 import { filterDimensions } from '../canvas/dimensionFilter';
-import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset, getDoorTagModelPoint, DOOR_TAG_RADIUS_MM } from '../canvas/doorPlacement';
+import { resolveDoorPlacement, doorLocalToWorld, getSlidePanelYOffset, getSectionalPlanSymbol, getDoorTagModelPoint, DOOR_TAG_RADIUS_MM } from '../canvas/doorPlacement';
 import { buildPerWallColorMap } from '../canvas/wallPlanColors';
 import { lineLiesOnSide1 } from '../canvas/wallFaceSides';
 import { buildDoorSchedule, doorMarkColor, isDoubleConfiguration } from '../door/doorSchedule';
 import { withPlanCanvasLightTheme } from '../canvas/planCanvasTheme';
 import { fitPdfRoomLabelText } from './pdfRoomLabelFit';
+
+function fillLocalQuad(doc, transformDoorPoint, corners, rgb) {
+    const p = corners.map(([x, y]) => transformDoorPoint(x, y));
+    doc.setFillColor(rgb[0], rgb[1], rgb[2]);
+    doc.triangle(p[0].x, p[0].y, p[1].x, p[1].y, p[2].x, p[2].y, 'F');
+    doc.triangle(p[0].x, p[0].y, p[2].x, p[2].y, p[3].x, p[3].y, 'F');
+}
+
+function strokeLocalLoop(doc, transformDoorPoint, corners, rgb, width) {
+    const p = corners.map(([x, y]) => transformDoorPoint(x, y));
+    doc.setDrawColor(rgb[0], rgb[1], rgb[2]);
+    doc.setLineWidth(width);
+    for (let i = 0; i < p.length; i += 1) {
+        const next = p[(i + 1) % p.length];
+        doc.line(p[i].x, p[i].y, next.x, next.y);
+    }
+}
+
+function drawSectionalDoorPdf(doc, door, placement, transformDoorPoint, lineWidth, scale) {
+    const sym = getSectionalPlanSymbol(door, placement.isInterior);
+    const leaf = [
+        [sym.left, sym.yWall],
+        [sym.right, sym.yWall],
+        [sym.right, sym.yFree],
+        [sym.left, sym.yFree],
+    ];
+    strokeLocalLoop(doc, transformDoorPoint, leaf, [29, 78, 216], Math.max(0.35, lineWidth * 2.2));
+    sym.brackets.forEach((item) => {
+        const half = item.size / 2;
+        const square = [
+            [item.cx - half, item.cy - half],
+            [item.cx + half, item.cy - half],
+            [item.cx + half, item.cy + half],
+            [item.cx - half, item.cy + half],
+        ];
+        fillLocalQuad(doc, transformDoorPoint, square, [34, 211, 238]);
+        strokeLocalLoop(doc, transformDoorPoint, square, [8, 145, 178], Math.max(0.12, lineWidth));
+    });
+    doc.setFillColor(34, 197, 94);
+    doc.setDrawColor(21, 128, 61);
+    doc.setLineWidth(Math.max(0.12, lineWidth));
+    sym.rollers.forEach((item) => {
+        const center = transformDoorPoint(item.cx, item.cy);
+        doc.circle(center.x, center.y, item.r * scale, 'FD');
+    });
+}
 
 function generateThicknessColorMap(walls) {
     return buildPerWallColorMap(walls, {
@@ -1299,7 +1345,7 @@ export function drawVectorWallPlan(
                             
                             // Calculate door cutout positions along the wall
                             const doorCutouts = wallDoors.map(door => {
-                                const slashLength = (door.door_type === 'swing') ? door.width : door.width * 0.85;
+                                const slashLength = (door.door_type === 'swing' || door.door_type === 'sectional') ? door.width : door.width * 0.85;
                                 const halfSlashRatio = (slashLength / wallLength) / 2;
                                 const gap = 200;
                                 const gapRatio = gap / wallLength;
@@ -1656,7 +1702,8 @@ export function drawVectorWallPlan(
                         };
 
                         // === Slashed Wall Section ===
-                        // Draw diagonal slashes to indicate door opening in wall
+                        // Sectional doors use their own plan symbol instead of the hatch.
+                        if (door.door_type !== 'sectional') {
                         const slashStart = { x: -slashHalf, y: 0 };
                         const slashEnd = { x: slashHalf, y: 0 };
                         const numSlashes = Math.max(3, Math.floor((doorWidth * scale) / 8)); // More slashes, thicker
@@ -1685,6 +1732,11 @@ export function drawVectorWallPlan(
                         
                         // Reset line width
                         doc.setLineWidth(lineWidth);
+                        }
+
+                        if (door.door_type === 'sectional') {
+                            drawSectionalDoorPdf(doc, door, placement, transformDoorPoint, lineWidth, scale);
+                        }
 
                         // === SWING DOOR DRAWING ===
                         if (door.door_type === 'swing') {

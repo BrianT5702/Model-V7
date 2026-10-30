@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
+import { isCurtainDoorType } from './doorSchedule';
 
 /**
  * useDoorForm - Custom hook for managing door form state and logic
@@ -103,8 +104,7 @@ export default function useDoorForm({
     } else if (newType === 'slide') {
       setSlideDirection('right');
       setSwingDirection(null);
-    } else if (newType === 'dock') {
-      // Dock doors don't need direction settings
+    } else if (isCurtainDoorType(newType)) {
       setSwingDirection(null);
       setSlideDirection(null);
     }
@@ -218,16 +218,14 @@ export default function useDoorForm({
       orientation: 'horizontal',
     };
     
-    // Only include these fields for non-dock doors
-    if (doorType !== 'dock') {
+    if (!isCurtainDoorType(doorType)) {
       doorData.configuration = configuration === 'single' ? 'single_sided' : 'double_sided';
       doorData.swing_direction = swingDirection;
       doorData.slide_direction = slideDirection;
       doorData.side = side;
     } else {
-      // Dock doors: include side field, but set defaults for other fields
-      doorData.configuration = 'single_sided'; // Default value
-      doorData.side = side; // Include side for dock doors (can be flipped)
+      doorData.configuration = 'single_sided';
+      doorData.side = side;
       doorData.swing_direction = null;
       doorData.slide_direction = null;
     }

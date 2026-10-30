@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ModalOverlay from '../../components/ModalOverlay';
 import useDoorForm from './useDoorForm';
+import { isCurtainDoorType } from './doorSchedule';
 import api from '../../api/api';
 
 const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
@@ -194,10 +195,11 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
                   <option value="swing">Swing</option>
                   <option value="slide">Slide</option>
                   <option value="dock">Dock Door</option>
+                  <option value="sectional">Sectional Door</option>
                 </select>
               </div>
 
-              {form.doorType !== 'dock' && (
+              {!isCurtainDoorType(form.doorType) && (
                 <div>
                   <label className="form-label">Configuration</label>
                   <select
@@ -307,7 +309,7 @@ const DoorEditorModal = ({ door, wall, onUpdate, onDelete, onClose }) => {
           <div>
             <h4 className="form-section-title block mb-2 pb-1 border-b border-gray-200">Controls</h4>
             <div className="form-grid mt-2">
-              {form.doorType !== 'dock' && (
+              {!isCurtainDoorType(form.doorType) && (
                 <button
                   onClick={form.handleFlipDirection}
                   className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"

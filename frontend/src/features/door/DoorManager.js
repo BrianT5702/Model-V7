@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import ModalOverlay from '../../components/ModalOverlay';
 import api from '../../api/api';
+import { isCurtainDoorType } from './doorSchedule';
 
 const DoorManager = ({
   projectId,
@@ -281,16 +282,14 @@ const DoorManager = ({
       storey: activeStoreyId
     };
     
-    // Only include these fields for non-dock doors
-    if (doorType !== 'dock') {
+    if (!isCurtainDoorType(doorType)) {
       doorData.configuration = configuration === "single" ? "single_sided" : "double_sided";
       doorData.swing_direction = swingDirection;
       doorData.slide_direction = slideDirection;
       doorData.side = side;
     } else {
-      // Dock doors: include side field, but set defaults for other fields
-      doorData.configuration = "single_sided"; // Default value
-      doorData.side = side; // Include side for dock doors (can be flipped)
+      doorData.configuration = "single_sided";
+      doorData.side = side;
       doorData.swing_direction = null;
       doorData.slide_direction = null;
     }
@@ -338,8 +337,7 @@ const DoorManager = ({
     } else if (newType === 'slide') {
       setSlideDirection('right');
       setSwingDirection('');
-    } else if (newType === 'dock') {
-      // Dock doors don't need direction settings
+    } else if (isCurtainDoorType(newType)) {
       setSwingDirection('');
       setSlideDirection('');
     }
@@ -418,10 +416,11 @@ const DoorManager = ({
                   <option value="swing">Swing</option>
                   <option value="slide">Slide</option>
                   <option value="dock">Dock Door</option>
+                  <option value="sectional">Sectional Door</option>
                 </select>
               </div>
 
-              {doorType !== 'dock' && (
+              {!isCurtainDoorType(doorType) && (
                 <div>
                   <label className="form-label">Configuration</label>
                   <select 

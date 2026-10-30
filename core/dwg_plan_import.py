@@ -10,6 +10,7 @@ so persist_plan_import can be reused.
 """
 from __future__ import annotations
 
+import io
 import logging
 import math
 import os
@@ -36,11 +37,15 @@ WALL_LAYER_EXACT = {
 # Short hatch / panel-tick strokes — not structural walls.
 HATCH_TICK_LAYERS = {"W"}
 WALL_LAYER_RE = re.compile(
-    r"(PIR\s*\d*\s*mm|PIR\s*PANEL|\bPANEL\b|\bWALL\b|PARTITION|COOLROOM)",
+    r"(PIR\s*\d*\s*mm|PIR\s*PANEL|\bPANEL\b|\bWALL\b|PARTITION|COOLROOM|COLDROOM|CHILLER|FREEZER)",
     re.IGNORECASE,
 )
-EXCLUDE_LAYER_RE = re.compile(
-    r"^(DEFPOINTS|VIEWPORT|HATCH|DIM|TEXT|CENTER|AXIS|GRID|TITLE|BORDER|VIEW)",
+# Annotation, fixtures, and sheet furniture — never turned into walls.
+JUNK_LAYER_RE = re.compile(
+    r"(DEFPOINTS|VIEWPORT|\bHATCH\b|\bDIM\b|\bTEXT\b|\bCENTER\b|\bAXIS\b|\bGRID\b|"
+    r"\bTITLE\b|\bTITTLE\b|\bBORDER\b|\bVIEW\b|\bWINDOW\b|\bDOOR\b|\bFITTING\b|"
+    r"\bDRAIN\b|\bBOLT\b|\bROOF\b|\bSCREW\b|\bSTAIR\b|\bRAIL\b|\bPARKING\b|\bROAD\b|"
+    r"\bNOTE\b|\bCOMMENT\b|\bLEADER\b|\bFURNITURE\b|\bTREE\b|\bPLANT\b|\bLEVEL\b|\bSECT\b)",
     re.IGNORECASE,
 )
 
@@ -58,7 +63,9 @@ DEFAULT_PAIR_RANGE = (45, 220)
 DOUBLE_STROKE_RANGE = (15.0, 45.0)
 MIN_FACE_LEN_MM = 80.0
 MIN_WALL_LEN_MM = 200.0
-MIN_KEEP_UNPAIRED_MM = 600.0
+MIN_KEEP_UNPAIRED_MM = 250.0
+MAX_COORD_MM = 1.0e8
+MAX_SEG_LEN_MM = 5_000_000.0
 ORIGIN_MARGIN_MM = 500.0
 SPIKE_MIN_LEN_MM = 20000.0
 SPIKE_MAX_INSIDE_FRAC = 0.4
@@ -114,13 +121,54 @@ def _pair_range_for_layer(layer: str) -> tuple[float, float]:
     return DEFAULT_PAIR_RANGE
 
 
+def _is_junk_layer(layer: str) -> bool:
+    name = (layer or "").strip()
+    if not name:
+        return True
+    return bool(JUNK_LAYER_RE.search(name))
+
+
 def _is_wall_layer(layer: str) -> bool:
     name = (layer or "").strip()
-    if not name or EXCLUDE_LAYER_RE.match(name):
+    if not name or _is_junk_layer(name):
         return False
     if name in WALL_LAYER_EXACT or name.upper() in {x.upper() for x in WALL_LAYER_EXACT}:
         return True
     return bool(WALL_LAYER_RE.search(name))
+
+
+def _height_from_layer(layer: str) -> float | None:
+    """Room height written into a layer name, e.g. '3600mm HT'."""
+    match = re.search(r"(\d{3,5})\s*mm\s*H(?:T|EIGHT)?\b", layer or "", re.IGNORECASE)
+    if not match:
+        return None
+    height = float(match.group(1))
+    if 1500.0 <= height <= 20000.0:
+        return height
+    return None
+
+
+def _unit_scale(span: float, insunits: int | None) -> float:
+    """
+    Convert source drawing units to millimetres.
+
+    United Panel sheets are almost always already in millimetres, even when the
+    DXF header says inches. Only scale when the drawing is too small to be mm.
+    """
+    if span >= 1500.0:
+        return 1.0
+    code = int(insunits or 0)
+    if code == 1:  # inches
+        return 25.4
+    if code == 2:  # feet
+        return 304.8
+    if code == 5:  # centimetres
+        return 10.0
+    if code == 4:  # millimetres
+        return 1.0
+    if code == 6 or span < 500.0:  # metres, or a small unitless plan
+        return 1000.0
+    return 1.0
 
 
 def _is_single_line_layer(layer: str) -> bool:
@@ -190,9 +238,19 @@ def _entities_section(dxf_text: str) -> str:
     return dxf_text[start:end]
 
 
+# A new entity is group code 0 followed by a name. A coordinate or flag whose
+# value is 0 must NOT split the entity — that bug dropped most AutoCAD walls.
+_ENTITY_HEAD = re.compile(
+    r"\n[ \t]*0\n([A-Za-z0-9_$.-]*[A-Za-z][A-Za-z0-9_$.-]*)\n"
+)
+
+
 def _iter_entity_blocks(section: str):
-    for m in re.finditer(r"\n\s*0\n([A-Z][A-Z0-9_]*)\n(.*?)(?=\n\s*0\n|\Z)", section, flags=re.S):
-        yield m.group(1), m.group(2)
+    source = "\n" + section
+    matches = list(_ENTITY_HEAD.finditer(source))
+    for index, match in enumerate(matches):
+        end = matches[index + 1].start() if index + 1 < len(matches) else len(source)
+        yield match.group(1).upper(), source[match.end() : end]
 
 
 def _group_dict(block: str) -> dict[str, str]:
@@ -200,71 +258,185 @@ def _group_dict(block: str) -> dict[str, str]:
     return dict(re.findall(r"\n\s*(\d+)\n([^\n]*)", "\n" + block))
 
 
+def _make_segment(layer: str, x1: float, y1: float, x2: float, y2: float) -> dict | None:
+    if not all(math.isfinite(v) for v in (x1, y1, x2, y2)):
+        return None
+    if max(abs(x1), abs(y1), abs(x2), abs(y2)) > MAX_COORD_MM:
+        return None
+    length = math.hypot(x2 - x1, y2 - y1)
+    # Length is still in drawing units here. Drop only numeric noise;
+    # the millimetre cutoff is applied after unit scaling.
+    if length < 1e-4 or length > MAX_SEG_LEN_MM:
+        return None
+    return {
+        "layer": (layer or "0").strip() or "0",
+        "x1": x1,
+        "y1": y1,
+        "x2": x2,
+        "y2": y2,
+        "len": length,
+        "mx": (x1 + x2) / 2,
+        "my": (y1 + y2) / 2,
+    }
+
+
+def _paperspace(group: dict[str, str]) -> bool:
+    try:
+        return int(float(group.get("67", "0"))) == 1
+    except ValueError:
+        return False
+
+
 def _parse_wall_segments(dxf_text: str) -> list[dict]:
+    """LINE / LWPOLYLINE edges from the ENTITIES section (all layers)."""
     section = _entities_section(dxf_text)
     segs: list[dict] = []
 
     for etype, block in _iter_entity_blocks(section):
+        if etype not in ("LINE", "LWPOLYLINE"):
+            continue
+        group = _group_dict(block)
+        if _paperspace(group):
+            continue
+        layer = group.get("8", "0")
         if etype == "LINE":
-            d = _group_dict(block)
-            layer = d.get("8", "0")
-            if not _is_wall_layer(layer):
-                continue
             try:
-                x1, y1 = float(d["10"]), float(d["20"])
-                x2, y2 = float(d["11"]), float(d["21"])
+                segment = _make_segment(
+                    layer,
+                    float(group["10"]),
+                    float(group["20"]),
+                    float(group["11"]),
+                    float(group["21"]),
+                )
             except (KeyError, ValueError):
                 continue
-            length = math.hypot(x2 - x1, y2 - y1)
-            if length < MIN_FACE_LEN_MM:
-                continue
-            segs.append(
-                {
-                    "layer": layer,
-                    "x1": x1,
-                    "y1": y1,
-                    "x2": x2,
-                    "y2": y2,
-                    "len": length,
-                    "mx": (x1 + x2) / 2,
-                    "my": (y1 + y2) / 2,
-                }
-            )
-        elif etype == "LWPOLYLINE":
-            d = _group_dict(block)
-            layer = d.get("8", "0")
-            if not _is_wall_layer(layer):
-                continue
-            xs = [float(x) for x in re.findall(r"\n\s*10\n([^\n]*)", "\n" + block)]
-            ys = [float(y) for y in re.findall(r"\n\s*20\n([^\n]*)", "\n" + block)]
-            if len(xs) != len(ys) or len(xs) < 2:
-                continue
-            try:
-                closed = int(float(d.get("70", "0"))) & 1
-            except ValueError:
-                closed = 0
-            pts = list(zip(xs, ys))
-            n = len(pts)
-            edge_count = n if closed else n - 1
-            for i in range(edge_count):
-                x1, y1 = pts[i]
-                x2, y2 = pts[(i + 1) % n]
-                length = math.hypot(x2 - x1, y2 - y1)
-                if length < MIN_FACE_LEN_MM:
-                    continue
-                segs.append(
-                    {
-                        "layer": layer,
-                        "x1": x1,
-                        "y1": y1,
-                        "x2": x2,
-                        "y2": y2,
-                        "len": length,
-                        "mx": (x1 + x2) / 2,
-                        "my": (y1 + y2) / 2,
-                    }
-                )
+            if segment:
+                segs.append(segment)
+            continue
+
+        xs = [float(x) for x in re.findall(r"\n\s*10\n([^\n]*)", "\n" + block)]
+        ys = [float(y) for y in re.findall(r"\n\s*20\n([^\n]*)", "\n" + block)]
+        if len(xs) != len(ys) or len(xs) < 2:
+            continue
+        try:
+            closed = int(float(group.get("70", "0"))) & 1
+        except ValueError:
+            closed = 0
+        points = list(zip(xs, ys))
+        count = len(points)
+        edge_count = count if closed else count - 1
+        for index in range(edge_count):
+            x1, y1 = points[index]
+            x2, y2 = points[(index + 1) % count]
+            segment = _make_segment(layer, x1, y1, x2, y2)
+            if segment:
+                segs.append(segment)
     return segs
+
+
+def _insunits_from_text(dxf_text: str) -> int:
+    match = re.search(r"\$INSUNITS\s*\n\s*70\n\s*(-?\d+)", dxf_text)
+    if not match:
+        return 0
+    try:
+        return int(match.group(1))
+    except ValueError:
+        return 0
+
+
+def _segments_via_ezdxf(dxf_bytes: bytes) -> tuple[list[dict], int]:
+    """
+    Read model-space lines with ezdxf, including geometry stored in blocks.
+
+    Layer 0 inside a block inherits the insert layer, which is how panel
+    outlines are usually drawn.
+    """
+    import ezdxf
+    from ezdxf import recover
+
+    logging.getLogger("ezdxf").setLevel(logging.ERROR)
+    doc, _auditor = recover.read(io.BytesIO(dxf_bytes))
+    try:
+        insunits = int(doc.header.get("$INSUNITS", 0) or 0)
+    except (TypeError, ValueError):
+        insunits = 0
+
+    def walk(entity, inherited: str | None, depth: int):
+        try:
+            layer = (entity.dxf.layer or "0").strip() or "0"
+        except Exception:
+            layer = inherited or "0"
+        if layer == "0" and inherited:
+            layer = inherited
+        if entity.dxftype() == "INSERT" and depth < 5:
+            if _is_junk_layer(layer):
+                return
+            try:
+                children = list(entity.virtual_entities())
+            except Exception:
+                return
+            for child in children:
+                yield from walk(child, layer, depth + 1)
+            return
+        yield entity, layer
+
+    segs: list[dict] = []
+    for entity in doc.modelspace():
+        for child, layer in walk(entity, None, 0):
+            kind = child.dxftype()
+            try:
+                if kind == "LINE":
+                    segment = _make_segment(
+                        layer,
+                        child.dxf.start.x,
+                        child.dxf.start.y,
+                        child.dxf.end.x,
+                        child.dxf.end.y,
+                    )
+                    if segment:
+                        segs.append(segment)
+                elif kind == "LWPOLYLINE":
+                    points = [(p[0], p[1]) for p in child.get_points("xy")]
+                    closed = bool(child.closed)
+                    count = len(points)
+                    if count < 2:
+                        continue
+                    edge_count = count if closed else count - 1
+                    for index in range(edge_count):
+                        x1, y1 = points[index]
+                        x2, y2 = points[(index + 1) % count]
+                        segment = _make_segment(layer, x1, y1, x2, y2)
+                        if segment:
+                            segs.append(segment)
+                elif kind == "POLYLINE":
+                    points = [(v.dxf.location.x, v.dxf.location.y) for v in child.vertices]
+                    closed = bool(child.is_closed)
+                    count = len(points)
+                    if count < 2:
+                        continue
+                    edge_count = count if closed else count - 1
+                    for index in range(edge_count):
+                        x1, y1 = points[index]
+                        x2, y2 = points[(index + 1) % count]
+                        segment = _make_segment(layer, x1, y1, x2, y2)
+                        if segment:
+                            segs.append(segment)
+            except Exception:
+                continue
+    return segs, insunits
+
+
+def _select_plan_segments(segs: list[dict]) -> tuple[list[dict], str]:
+    """Prefer named wall/panel layers. Fall back to every non-annotation layer."""
+    wall = [s for s in segs if _is_wall_layer(s.get("layer") or "")]
+    if len(wall) >= 4:
+        return wall, "wall layers"
+    usable = [s for s in segs if not _is_junk_layer(s.get("layer") or "")]
+    if len(usable) >= 4:
+        return usable, "drawing lines (no dedicated wall layer)"
+    if len(segs) >= 4:
+        return segs, "all lines"
+    return wall or usable or segs, "wall layers"
 
 
 def _spatial_regions(segs: list[dict], cell: float = 5000.0) -> list[list[dict]]:
@@ -573,14 +745,22 @@ def _normalize_walls(walls: list[dict]) -> tuple[list[dict], dict[str, float]]:
     for w in walls:
         x1, y1 = w["x1"] - ox, w["y1"] - oy
         x2, y2 = w["x2"] - ox, w["y2"] - oy
-        # Snap near-axis
-        if abs(x2 - x1) >= abs(y2 - y1):
-            y = (y1 + y2) / 2
+        dx, dy = x2 - x1, y2 - y1
+        length = math.hypot(dx, dy)
+        if length < 1.0:
+            continue
+        # Straighten walls that are already axis-aligned. Leave real diagonals.
+        tol = max(20.0, length * 0.03)
+        if abs(dy) <= tol and abs(dx) >= abs(dy):
+            y = (y1 + y2) / 2.0
             y1 = y2 = y
-        else:
-            x = (x1 + x2) / 2
+        elif abs(dx) <= tol and abs(dy) > abs(dx):
+            x = (x1 + x2) / 2.0
             x1 = x2 = x
         length = math.hypot(x2 - x1, y2 - y1)
+        if length < MIN_WALL_LEN_MM:
+            continue
+        layer = w.get("layer") or ""
         out.append(
             {
                 "start_x": round(x1),
@@ -590,7 +770,8 @@ def _normalize_walls(walls: list[dict]) -> tuple[list[dict], dict[str, float]]:
                 "length_mm": round(length),
                 "source_length_mm": round(w["len"]),
                 "thickness_mm": _snap_thickness(float(w.get("thick") or 100)),
-                "layer": w.get("layer") or "",
+                "height": _height_from_layer(layer),
+                "layer": layer,
             }
         )
 
@@ -613,85 +794,163 @@ def _mode_thickness(walls: list[dict], default: float = 100.0) -> float:
     return float(counts.most_common(1)[0][0])
 
 
+def _scale_segments(segs: list[dict], scale: float) -> list[dict]:
+    if abs(scale - 1.0) < 1e-9:
+        return segs
+    scaled = []
+    for src in segs:
+        segment = _make_segment(
+            src["layer"],
+            src["x1"] * scale,
+            src["y1"] * scale,
+            src["x2"] * scale,
+            src["y2"] * scale,
+        )
+        if segment:
+            scaled.append(segment)
+    return scaled
+
+
+def _load_drawing_segments(dxf_bytes: bytes) -> tuple[list[dict], int, str]:
+    """Return (segments, insunits, reader name). ezdxf first, text parser fallback."""
+    try:
+        segs, insunits = _segments_via_ezdxf(dxf_bytes)
+        if segs:
+            return segs, insunits, "ezdxf"
+    except Exception as exc:
+        logger.info("DXF ezdxf reader failed (%s); using text parser.", exc)
+
+    try:
+        text = dxf_bytes.decode("utf-8")
+    except UnicodeDecodeError:
+        text = dxf_bytes.decode("latin-1", errors="replace")
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    return _parse_wall_segments(text), _insunits_from_text(text), "text"
+
+
+def _segments_as_centerlines(segs: list[dict]) -> list[dict]:
+    """Use each line as a wall when face-pairing finds nothing."""
+    walls = []
+    for segment in segs:
+        if segment["len"] < MIN_WALL_LEN_MM:
+            continue
+        layer = segment.get("layer") or ""
+        walls.append(
+            {
+                "x1": segment["x1"],
+                "y1": segment["y1"],
+                "x2": segment["x2"],
+                "y2": segment["y2"],
+                "len": segment["len"],
+                "thick": _thickness_from_layer(layer) or 100.0,
+                "layer": layer,
+            }
+        )
+    if not walls:
+        return []
+    return _drop_outside_spikes(_merge_collinear_walls(walls))
+
+
 def extract_plan_from_dxf_bytes(
     dxf_bytes: bytes,
     *,
     region_index: int = 0,
 ) -> dict[str, Any]:
     """Extract editable wall plan preview from DXF bytes."""
-    try:
-        text = dxf_bytes.decode("utf-8")
-    except UnicodeDecodeError:
-        text = dxf_bytes.decode("latin-1", errors="replace")
-    text = text.replace("\r\n", "\n").replace("\r", "\n")
-
-    segs = _parse_wall_segments(text)
+    raw_segs, insunits, reader = _load_drawing_segments(dxf_bytes)
+    segs, source_kind = _select_plan_segments(raw_segs)
+    if segs:
+        xs = [c for s in segs for c in (s["x1"], s["x2"])]
+        ys = [c for s in segs for c in (s["y1"], s["y2"])]
+        span = max(max(xs) - min(xs), max(ys) - min(ys))
+        segs = _scale_segments(segs, _unit_scale(span, insunits))
+        segs = [s for s in segs if s["len"] >= MIN_FACE_LEN_MM]
     if not segs:
         raise ValueError(
-            "No wall-layer LINE/LWPOLYLINE geometry found. "
-            "Expected layers such as WALL, W, COOLROOM PARTITION, or *PIR* PANEL."
+            "No wall lines found in this DWG/DXF. "
+            "Put the panel walls on a layer such as WALL, PIR PANEL, or PARTITION."
         )
 
     regions = _spatial_regions(segs)
     if not regions:
         raise ValueError("Could not cluster wall geometry into a plan region.")
 
-    region_summaries = []
-    for ri, reg in enumerate(regions):
+    built: list[tuple[list[dict], list[dict], dict]] = []
+    for reg in regions:
+        walls = _walls_from_region(reg)
+        if not walls:
+            walls = _segments_as_centerlines(reg)
         xs = [c for s in reg for c in (s["x1"], s["x2"])]
         ys = [c for s in reg for c in (s["y1"], s["y2"])]
-        span_x = max(xs) - min(xs)
-        span_y = max(ys) - min(ys)
-        region_summaries.append(
-            {
-                "index": ri,
-                "segment_count": len(reg),
-                "span_x": round(span_x),
-                "span_y": round(span_y),
-                "layers": dict(Counter(s["layer"] for s in reg)),
-            }
-        )
+        summary = {
+            "segment_count": len(reg),
+            "span_x": round(max(xs) - min(xs)),
+            "span_y": round(max(ys) - min(ys)),
+            "wall_count": len(walls),
+            "layers": dict(Counter(s["layer"] for s in reg)),
+        }
+        built.append((reg, walls, summary))
 
-    # Rank by footprint area (main building), not raw segment density
-    # (coolroom module racks can have more segments but a narrow span).
-    ranked = sorted(
-        range(len(regions)),
-        key=lambda i: (
-            region_summaries[i]["span_x"] * region_summaries[i]["span_y"],
-            region_summaries[i]["segment_count"],
-        ),
-        reverse=True,
-    )
-    # Re-order summaries/regions so index 0 is the best default footprint.
-    regions = [regions[i] for i in ranked]
+    def _region_rank(item) -> tuple:
+        walls = item[1]
+        summary = item[2]
+        count = summary["wall_count"]
+        length = sum(w["len"] for w in walls)
+        minor = min(summary["span_x"], summary["span_y"])
+        major = max(summary["span_x"], summary["span_y"])
+        # A floor plan has walls in both directions. A lone 80m line does not.
+        plan_like = count >= 4 and minor >= 2000 and major >= 3000
+        return (1 if plan_like else 0, count, length)
+
+    # Rank the building plan above elevations, title blocks, and single long lines.
+    built.sort(key=_region_rank, reverse=True)
+    regions = [item[0] for item in built]
+    region_walls = [item[1] for item in built]
     region_summaries = [
-        {**region_summaries[i], "index": new_i}
-        for new_i, i in enumerate(ranked)
+        {**item[2], "index": index} for index, item in enumerate(built)
     ]
 
     idx = max(0, min(int(region_index), len(regions) - 1))
-    raw_walls = _walls_from_region(regions[idx])
+    raw_walls = region_walls[idx]
+    if not raw_walls:
+        raw_walls = _segments_as_centerlines(regions[idx])
     if not raw_walls:
         raise ValueError(
-            f"Region {idx} has wall faces but no centerlines could be paired. "
-            "Try another region_index from the regions list."
+            "The file has lines, but none of them are long enough to draw as walls."
         )
 
     walls, bounds = _normalize_walls(raw_walls)
+    if not walls:
+        raise ValueError(
+            "The file has lines, but none of them are long enough to draw as walls."
+        )
     thickness = _mode_thickness(walls)
-    height_mm = 2500.0
+    layer_heights = [h for w in walls if (h := w.get("height"))]
+    height_mm = max(layer_heights) if layer_heights else 2500.0
+    for wall in walls:
+        if not wall.get("height"):
+            wall["height"] = height_mm
 
     from .pdf_plan_import import _infer_intersections, _infer_rooms
 
-    intersections = _infer_intersections(walls)
-    rooms = _infer_rooms(walls, "", [], height_mm)
+    try:
+        intersections = _infer_intersections(walls)
+    except Exception:
+        logger.exception("DWG import: intersection inference failed")
+        intersections = []
+    try:
+        rooms = _infer_rooms(walls, "", [], height_mm)
+    except Exception:
+        logger.exception("DWG import: room inference failed")
+        rooms = []
 
     max_x = bounds["max_x"]
     max_y = bounds["max_y"]
     notes = [
-        "Geometry from DWG/DXF wall layers (vector faces to centerlines).",
+        f"Walls read from the DWG/DXF ({source_kind}, {reader}) and drawn as centerlines.",
         f"Using plan region {idx} of {len(regions)} "
-        f"({region_summaries[idx]['span_x']}×{region_summaries[idx]['span_y']} mm source span).",
+        f"({region_summaries[idx]['span_x']}×{region_summaries[idx]['span_y']} mm, "
+        f"{len(walls)} walls).",
     ]
     if len(regions) > 1:
         notes.append(
